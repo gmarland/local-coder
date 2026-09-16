@@ -37,10 +37,10 @@ export async function pullModel(model: Model): Promise<void> {
     child.on("exit", code => code === 0 ? resolve() : reject(new Error(`ollama pull exited with ${code}`)));
   });
 }
-export async function testModel(model: string): Promise<boolean> {
+export async function testModel(model: string, request: FetchLike = fetch): Promise<boolean> {
   try {
-    const r = await fetch(`${endpoint}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
-      body: JSON.stringify({ model, stream: false, messages: [{ role: "user", content: "Return only the result of 2 + 2." }], options: { num_predict: 16 } }) });
+    const r = await request(`${endpoint}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
+      body: JSON.stringify({ model, stream: false, think: false, messages: [{ role: "user", content: "Return only the result of 2 + 2." }], options: { num_predict: 256 } }) });
     if (!r.ok) return false;
     const value = await r.json() as { message?: { content?: string } };
     return value.message?.content?.includes("4") ?? false;
@@ -79,12 +79,12 @@ export async function probeToolCalling(model: string, request: FetchLike = fetch
           }
         }],
         temperature: 0,
-        max_tokens: 96
+        max_tokens: 512
       })
     });
     if (!r.ok) return { ok: false, reason: "request-failed" };
-    const value = await r.json() as { message?: { tool_calls?: { function?: { name?: string; arguments?: unknown } }[] } };
-    const calls = value.message?.tool_calls;
+    const value = await r.json() as { choices?: { message?: { tool_calls?: { function?: { name?: string; arguments?: unknown } }[] } }[] };
+    const calls = value.choices?.[0]?.message?.tool_calls;
     if (!Array.isArray(calls) || calls.length === 0) return { ok: false, reason: "missing-tool-call" };
     const call = calls.find(item => item.function?.name === "local_coder_probe");
     if (!call) return { ok: false, reason: "wrong-tool" };

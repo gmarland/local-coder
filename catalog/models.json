@@ -40,7 +40,7 @@
       "minimumMemoryGB": 22,
       "recommendedMemoryGB": 36,
       "storageGB": 15.0,
-      "contextWindow": 384000,
+      "contextWindow": 393216,
       "toolCalling": true,
       "agenticCoding": true,
       "speed": 6,
