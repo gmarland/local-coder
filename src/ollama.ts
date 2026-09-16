@@ -97,3 +97,41 @@ export async function probeToolCalling(model: string, request: FetchLike = fetch
     return { ok: true };
   } catch { return { ok: false, reason: "request-failed" }; }
 }
+
+export async function probeDelegation(model: string, request: FetchLike = fetch): Promise<ToolCallProbe> {
+  try {
+    const r = await request(`${endpoint}/v1/chat/completions`, {
+      method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
+      body: JSON.stringify({
+        model, stream: false, temperature: 0, max_tokens: 512,
+        messages: [
+          { role: "system", content: "You are a read-only coding orchestrator. For repository changes, call the task tool with the correct specialist. Never tell the user to call a specialist." },
+          { role: "user", content: "Update the README installation instructions in this repository. Delegate the edit now." }
+        ],
+        tools: [{ type: "function", function: {
+          name: "task", description: "Launch a specialist agent to perform a task.",
+          parameters: { type: "object", properties: {
+            subagent_type: { type: "string", enum: ["coder", "researcher", "reviewer"] },
+            description: { type: "string" }, prompt: { type: "string" }
+          }, required: ["subagent_type", "description", "prompt"] }
+        } }]
+      })
+    });
+    if (!r.ok) return { ok: false, reason: "request-failed" };
+    const value = await r.json() as { choices?: { message?: { tool_calls?: { function?: { name?: string; arguments?: unknown } }[] } }[] };
+    const calls = value.choices?.[0]?.message?.tool_calls;
+    if (!Array.isArray(calls) || calls.length === 0) return { ok: false, reason: "missing-tool-call" };
+    const call = calls.find(item => item.function?.name === "task");
+    if (!call) return { ok: false, reason: "wrong-tool" };
+    let args = call.function?.arguments;
+    if (typeof args === "string") {
+      try { args = JSON.parse(args); } catch { return { ok: false, reason: "wrong-arguments" }; }
+    }
+    if (!args || typeof args !== "object" || Array.isArray(args)) return { ok: false, reason: "wrong-arguments" };
+    const task = args as Record<string, unknown>;
+    if (task.subagent_type !== "coder" || typeof task.prompt !== "string" || !task.prompt.trim() ||
+        typeof task.description !== "string" || !task.description.trim())
+      return { ok: false, reason: "wrong-arguments" };
+    return { ok: true };
+  } catch { return { ok: false, reason: "request-failed" }; }
+}

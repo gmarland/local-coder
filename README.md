@@ -2,7 +2,7 @@
 
 `local-coder` configures [OpenCode](https://opencode.ai) to use local, tool-capable models through [Ollama](https://ollama.com). It detects the machine, recommends a small role-based model set, lets the developer customise it, downloads only after confirmation, and validates the result.
 
-Setup is local-only: the CLI does not upload prompts, source code, hardware details, or telemetry. Generated OpenCode configuration is ordinary JSON and Markdown.
+Setup is local-only: the CLI does not upload prompts, source code, hardware details, or telemetry. Generated OpenCode configuration is ordinary JSON and Markdown. When OpenCode's researcher uses web tools, its search queries and fetched URLs go to the configured web service.
 
 ## Requirements
 
@@ -71,7 +71,22 @@ local-coder-ownership.json
 
 Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Interactive setup asks whether to create timestamped backups before replacing existing generated files and defaults to overwriting without backups. Automated `--yes` runs also overwrite without backups unless `--backup` is supplied. Invalid existing configuration causes setup to stop without overwriting it.
 
-The orchestrator is OpenCode's primary agent. It delegates all repository modifications to the coder, unfamiliar domain work to the read-only researcher, and significant independent review to the read-only reviewer. Delegation prompts must include the concrete request and relevant context. The orchestrator cannot edit files or run implementation commands itself. Agent descriptions and permissions are generated in OpenCode's documented Markdown format.
+The orchestrator is OpenCode's primary, user-facing agent. Users normally interact only with it:
+
+```text
+User
+  |
+  v
+Orchestrator
+  |
+  +---- implementation ----> Coder
+  +---- external knowledge -> Researcher
+  +---- verification -------> Reviewer
+```
+
+For example, `> Add a health endpoint to the API and update the README.` causes the orchestrator to invoke the coder through OpenCode's task tool. The coder searches the repository, edits the implementation and README, and runs appropriate tests. For a substantial change, the orchestrator may then invoke the reviewer and send actionable fixes back to the coder before reporting completion. The user does not need to switch agents.
+
+The orchestrator can read and search but cannot edit files or run shell commands. The coder can edit files and run builds and tests. The researcher and reviewer are read-only. Researcher web fetch is enabled; OpenCode's web search tool is available with an OpenCode or OpenCode Go provider, or when `OPENCODE_ENABLE_EXA=1` or `OPENCODE_ENABLE_PARALLEL=1` is set. Agent descriptions and permissions use OpenCode's documented Markdown format.
 
 ## Recommendation design
 
@@ -85,7 +100,7 @@ CLI workflows live in [`src/commands/`](src/commands), model selection in [`src/
 
 ## Safety and validation
 
-Before changing anything, setup shows the exact models, estimated download size, and files it will write. Pulls use Ollama's own resumable downloader and visible progress. Before writing configuration, setup checks that Ollama is reachable, each model responds to a tiny prompt, advertises tools, and returns a real structured `tool_calls` response to a harmless synthetic tool. JSON merely printed as assistant text is rejected because OpenCode cannot safely execute it. `--skip-validation` bypasses these inference checks with a prominent warning; `--no-pull` creates configuration only when models are unavailable.
+Before changing anything, setup shows the exact models, estimated download size, and files it will write. Pulls use Ollama's own resumable downloader and visible progress. Before writing configuration, setup checks that Ollama is reachable, each model responds to a tiny prompt, advertises tools, and returns a real structured `tool_calls` response to a harmless synthetic tool. JSON merely printed as assistant text is rejected because OpenCode cannot safely execute it. It also asks the orchestrator model to select the coder through a synthetic task call for a sample edit. Failure of that additional delegation check warns about reliability but does not block installation. `--skip-validation` bypasses these inference checks with a prominent warning; `--no-pull` creates configuration only when models are unavailable.
 
 OpenCode edits the directory it is launched against. Setup prints an explicit `opencode /path/to/project` command; do not launch it from the `local-coder/bin` directory when you intend to modify the repository above it.
 

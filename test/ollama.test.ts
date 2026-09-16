@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deleteModel, installedModelDigests, modelAdvertisesTools, probeToolCalling, testModel } from "../src/ollama.js";
+import { deleteModel, installedModelDigests, modelAdvertisesTools, probeDelegation, probeToolCalling, testModel } from "../src/ollama.js";
 
 const jsonResponse = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status,
@@ -42,6 +42,24 @@ test("tool probe rejects the wrong tool and malformed arguments", async () => {
     choices: [{ message: { tool_calls: [{ function: { name: "local_coder_probe", arguments: { token: "wrong" } } }] } }]
   }));
   assert.deepEqual(wrongArguments, { ok: false, reason: "wrong-arguments" });
+});
+
+test("delegation probe requires a structured task call selecting coder", async () => {
+  const result = await probeDelegation("test-model", (input, init) => {
+    assert.match(String(input), /\/v1\/chat\/completions$/);
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.tools[0].function.name, "task");
+    assert.match(body.messages[1].content, /Update the README/);
+    return jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+      name: "task", arguments: JSON.stringify({ subagent_type: "coder", description: "Edit README", prompt: "Update the README installation instructions." })
+    } }] } }] });
+  });
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { content: "Use coder." } }] })),
+    { ok: false, reason: "missing-tool-call" });
+  assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+    name: "task", arguments: { subagent_type: "researcher", description: "Research", prompt: "Look up README syntax" }
+  } }] } }] })), { ok: false, reason: "wrong-arguments" });
 });
 
 test("response smoke test allows thinking models to produce a final answer", async () => {

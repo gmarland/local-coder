@@ -6,7 +6,7 @@ import * as p from "@clack/prompts";
 import { detectHardware } from "../hardware.js";
 import { compatibleModels, recommend, withCustomAssignments } from "../models/recommend.js";
 import { applyInstallationPlan, planInstallation, readExistingConfig } from "../opencode/config.js";
-import { installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeToolCalling, pullModel, testModel } from "../ollama.js";
+import { installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeDelegation, probeToolCalling, pullModel, testModel } from "../ollama.js";
 import { recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
 import { roles, type Model, type Preset, type Recommendation } from "../types.js";
 import { cancelled, showRecommendation, type Options } from "./common.js";
@@ -120,6 +120,11 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     runtimeChecks.push(`${model.name} structured tool call: ${probe.ok ? "✓" : `failed (${probeFailure(probe.reason)})`}`);
     runtimeValid = runtimeValid && responds && advertised && probe.ok;
   }
+  if (!options.skipValidation && present.has(result.assignments.orchestrator.ollamaModel) && runtimeValid) {
+    const delegation = await probeDelegation(result.assignments.orchestrator.ollamaModel);
+    runtimeChecks.push(`Orchestrator selects coder via task: ${delegation.ok ? "✓" : `warning (${probeFailure(delegation.reason)})`}`);
+    if (!delegation.ok) p.log.warn("The orchestrator model passed structured tool calling but did not delegate a sample file edit to coder. Automatic delegation may be unreliable; consider another orchestrator model.");
+  }
   if (options.skipValidation) p.log.warn("Model inference and structured tool-call validation were skipped. Tool execution has not been verified.");
   if (running && result.uniqueModels.every(model => present.has(model.ollamaModel)) && !options.skipValidation && !runtimeValid) {
     p.note(runtimeChecks.join("\n"), "Validation failed");
@@ -138,4 +143,3 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   p.note(checks.join("\n"), "Validation");
   p.outro(setupValid ? `Setup complete. OpenCode edits the project directory passed here:\n\n  ${launchCommand(options, dest)}\n\nConfig: ${install.configPath}` : `Configuration written, but runtime setup is incomplete. Resolve the warnings and rerun:\n\n  local-coder configure\n\nWhen ready, launch OpenCode with an explicit project path.\nConfig: ${install.configPath}`);
 }
-

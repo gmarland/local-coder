@@ -27,10 +27,35 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   const setup = recommend((await loadCatalogue()).models, hardware);
   const orchestrator = generateAgent("orchestrator", setup);
   assert.match(orchestrator, /coder: allow/);
+  assert.match(orchestrator, /researcher: allow/);
+  assert.match(orchestrator, /reviewer: allow/);
+  assert.match(orchestrator, /mode: primary/);
   assert.match(orchestrator, /edit: deny/);
   assert.match(orchestrator, /bash: deny/);
-  assert.match(orchestrator, /Every delegation prompt must be self-contained/);
-  assert.match(orchestrator, /Delegate every repository modification.*@coder/);
+  assert.match(orchestrator, /CALL that agent with the task tool/);
+  assert.match(orchestrator, /call task with subagent_type coder/);
+  assert.match(orchestrator, /call task with subagent_type researcher/);
+  assert.match(orchestrator, /call task with subagent_type reviewer/);
+  assert.match(orchestrator, /relevant user request.*constraints.*relevant research.*expected outcome/);
+  assert.match(orchestrator, /Never reply "use the coder"/);
+});
+
+test("specialists have the intended edit, shell, and web permissions", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const coder = generateAgent("coder", setup);
+  assert.match(coder, /mode: subagent/);
+  assert.match(coder, /edit: allow/);
+  assert.match(coder, /bash: allow/);
+  assert.match(coder, /Implement the delegated request directly in the repository/);
+  assert.match(coder, /Never return code for the user to paste/);
+  for (const role of ["researcher", "reviewer"] as const) {
+    const agent = generateAgent(role, setup);
+    assert.match(agent, /mode: subagent/);
+    assert.match(agent, /edit: deny/);
+    assert.match(agent, /bash: deny/);
+    assert.match(agent, /task: deny/);
+  }
+  assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
 });
 
 test("installation backs up and merges existing configuration and agents", async () => {
