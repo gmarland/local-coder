@@ -20,3 +20,13 @@ test("catalogue parser rejects duplicate entries", async () => {
   await writeFile(file, JSON.stringify({ schemaVersion: 1, updated: "test", models: [valid, valid] }));
   await assert.rejects(loadCatalogue(file), /duplicate/);
 });
+
+test("catalogue rejects invalid roles and duplicate Ollama tags", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-catalogue-shape-"));
+  const file = path.join(dir, "bad.json");
+  const valid = (await loadCatalogue()).models[0];
+  await writeFile(file, JSON.stringify({ schemaVersion: 1, updated: "test", models: [{ ...valid, roles: ["unknown"] }] }));
+  await assert.rejects(loadCatalogue(file), /invalid model/);
+  await writeFile(file, JSON.stringify({ schemaVersion: 1, updated: "test", models: [valid, { ...valid, id: "different-id" }] }));
+  await assert.rejects(loadCatalogue(file), /duplicate Ollama model/);
+});

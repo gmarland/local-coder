@@ -9,9 +9,9 @@ import { loadCatalogue } from "./catalogue.js";
 import { generateAgent, generalInstructions } from "./agents.js";
 import { detectHardware } from "./hardware.js";
 import { compatibleModels, recommend, withCustomAssignments } from "./recommend.js";
-import { installConfiguration, readExistingConfig, readSavedRecommendation } from "./opencode.js";
+import { applyInstallationPlan, planInstallation, readExistingConfig, readSavedRecommendation } from "./opencode.js";
 import { deleteModel, installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeToolCalling, pullModel, testModel } from "./ollama.js";
-import { cleanupFiles, readOwnership } from "./ownership.js";
+import { applyCleanupPlan, planCleanupFiles, readOwnership } from "./ownership.js";
 import { finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "./registry.js";
 import { roles, type Model, type Preset, type Recommendation, type Role, type SavedState } from "./types.js";
 
@@ -112,7 +112,7 @@ async function customise(base: Recommendation, models: Model[], h: Awaited<Retur
       cancelled(tag); assignments[role] = manualModel((tag as string).trim());
     } else assignments[role] = compatible.find(m => m.id === selected)!;
   }
-  return withCustomAssignments(base, assignments);
+  return withCustomAssignments(base, assignments, h);
 }
 
 async function statusCommand(dest: string) {
@@ -160,7 +160,8 @@ async function uninstall(options: Options, dest: string) {
   const scope = registry.scopes[dest];
   const statePath = path.join(dest, "local-coder-state.json");
   if (!ownership && !scope && !existsSync(statePath)) { console.log(`Local AI setup is not configured in ${dest}`); return; }
-  const files = await cleanupFiles(dest, true);
+  const filePlan = await planCleanupFiles(dest);
+  const files = filePlan.preview;
   const models = modelsToDelete(registry, dest);
   const legacy = !ownership && existsSync(statePath);
   const legacyFiles = legacy ? await cleanupLegacyFiles(dest, true) : { removed: [] as string[], conflicts: [] as string[] };
@@ -179,7 +180,7 @@ async function uninstall(options: Options, dest: string) {
     cancelled(proceed);
     if (!proceed) { p.cancel("No changes were made."); return; }
   }
-  const cleaned = await cleanupFiles(dest);
+  const cleaned = await applyCleanupPlan(filePlan);
   const legacyCleaned = legacy ? await cleanupLegacyFiles(dest, false) : { removed: [] as string[], conflicts: [] as string[] };
   const deleted: string[] = [];
   const failed: string[] = [];
@@ -209,9 +210,10 @@ async function reinstall(options: Options, models: Model[], dest: string) {
   if (options.preset || options.noPull || options.skipValidation)
     throw new Error("reinstall restores the saved selection; only --project, --catalog, --yes, and --dry-run apply");
   const result = await readSavedRecommendation(dest, models);
+  const plan = await planInstallation(dest, result, { recoverInvalidConfig: true, backupExisting: true });
   p.intro("Reinstall OpenCode Configuration");
   showRecommendation(result);
-  p.note(`Will rewrite and back up existing files:\n  ${dest}/opencode.json or opencode.jsonc\n  ${path.join(dest, "agents", "{orchestrator,coder,researcher,reviewer}.md")}\n  ${path.join(dest, "AGENTS.md")}\n  ${path.join(dest, "local-coder-state.json")}\n\nInstalled Ollama models will not be downloaded, replaced, tested, or removed.`, "Ready to restore OpenCode");
+  p.note(`Will rewrite and back up existing files:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nInstalled Ollama models will not be downloaded, replaced, tested, or removed.`, "Ready to restore OpenCode");
   if (options.dryRun) { p.outro("Dry run complete; no changes were made."); return; }
   if (!options.yes && !process.stdin.isTTY) throw new Error("Interactive input is unavailable; rerun with --yes");
   if (!options.yes) {
@@ -219,7 +221,7 @@ async function reinstall(options: Options, models: Model[], dest: string) {
     cancelled(proceed);
     if (!proceed) { p.cancel("No changes were made."); return; }
   }
-  const install = await installConfiguration(dest, result, { recoverInvalidConfig: true, backupExisting: true });
+  const install = await applyInstallationPlan(plan, { recoverInvalidConfig: true, backupExisting: true });
   if (install.backupPath) p.log.info(`Backed up existing config to ${install.backupPath}`);
   if (install.recoveredInvalidConfig) p.log.warn("The existing OpenCode config was invalid, so it was backed up and rebuilt from saved state.");
   const configValid = await readExistingConfig(install.configPath).then(() => true, () => false);
@@ -248,16 +250,16 @@ async function setup(options: Options, models: Model[], h: Awaited<ReturnType<ty
     if (action === "custom") { result = await customise(result, models, h); recommendationChanged = true; }
   }
   if (recommendationChanged) showRecommendation(result);
+  const plan = await planInstallation(dest, result);
   const before = h.commands.ollama && await ollamaRunning() ? new Set(await installedModels()) : new Set<string>();
   const modelsToPull = result.uniqueModels.filter(m => !before.has(m.ollamaModel));
   const downloadGB = modelsToPull.reduce((sum, model) => sum + model.storageGB, 0);
   if (result.warnings.length) p.note(result.warnings.join("\n"), "Warnings");
   if (downloadGB + 5 > h.diskAvailableGB) throw new Error(`Insufficient disk space: keep at least 5 GB free after the ${downloadGB} GB model download. Choose smaller models or free disk space.`);
   const downloadPlan = options.noPull ? "Will not download models" : modelsToPull.length ? `Will download missing models:\n${modelsToPull.map(m => `  ${m.ollamaModel}  ~${m.storageGB || "?"} GB`).join("\n")}` : "All selected models are already installed";
-  p.note(`${downloadPlan}\n\nWill merge and write:\n  ${path.join(dest, "opencode.json")}\n  ${path.join(dest, "agents", "{orchestrator,coder,researcher,reviewer}.md")}\n  ${path.join(dest, "AGENTS.md")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
+  p.note(`${downloadPlan}\n\nWill merge and write:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
   if (options.dryRun) { p.outro("Dry run complete; no changes were made."); return; }
-  const managedFiles = [path.join(dest, "opencode.json"), path.join(dest, "opencode.jsonc"), path.join(dest, "AGENTS.md"),
-    path.join(dest, "local-coder-state.json"), ...roles.map(role => path.join(dest, "agents", `${role}.md`))];
+  const managedFiles = plan.files.map(file => file.path);
   let backupExisting = options.backup;
   if (managedFiles.some(existsSync) && !options.yes && !options.backup) {
     const backup = await p.confirm({ message: "Create timestamped backups before overwriting existing OpenCode files?", initialValue: false });
@@ -305,7 +307,7 @@ async function setup(options: Options, models: Model[], h: Awaited<ReturnType<ty
     process.exitCode = 1;
     return;
   }
-  const install = await installConfiguration(dest, result, { backupExisting });
+  const install = await applyInstallationPlan(plan, { backupExisting });
   if (install.backupPath) p.log.info(`Backed up existing config to ${install.backupPath}`);
   let configValid = false;
   try { await readExistingConfig(install.configPath); configValid = true; } catch { /* reported in validation */ }

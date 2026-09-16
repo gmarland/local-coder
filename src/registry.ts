@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { atomicWrite } from "./storage.js";
 
 interface Scope { selected: string[]; pulled: string[]; used: string[] }
 interface Registry { version: 1; scopes: Record<string, Scope>; managed: Record<string, string> }
@@ -34,9 +35,7 @@ async function mutate(file: string, change: (registry: Registry) => void): Promi
     change(registry);
     if (!Object.keys(registry.scopes).length && !Object.keys(registry.managed).length) await rm(file, { force: true });
     else {
-      const temp = `${file}.tmp-${process.pid}`;
-      await writeFile(temp, `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 });
-      await rename(temp, file);
+      await atomicWrite(file, `${JSON.stringify(registry, null, 2)}\n`);
     }
   } finally { await rm(lock, { recursive: true, force: true }); }
 }

@@ -1,12 +1,20 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { parse, type ParseError } from "jsonc-parser";
+import { atomicWrite } from "./storage.js";
 
 interface ManagedFile { original: string | null; generated: string; generatedHash: string }
 interface Ownership { version: 1; files: Record<string, ManagedFile> }
 export interface CleanupResult { restored: string[]; removed: string[]; conflicts: string[] }
+interface CleanupAction {
+  relative: string;
+  entry: ManagedFile;
+  current: string | null;
+  replacement?: string | null;
+}
+export interface CleanupPlan { destination: string; actions: CleanupAction[]; preview: CleanupResult }
 const ownershipName = "local-coder-ownership.json";
 const managedPaths = new Set(["opencode.json", "opencode.jsonc", "AGENTS.md", "local-coder-state.json", "agents/orchestrator.md", "agents/coder.md", "agents/researcher.md", "agents/reviewer.md"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -19,9 +27,7 @@ async function isSymlink(file: string): Promise<boolean> {
 async function save(destination: string, ownership: Ownership): Promise<void> {
   const target = ownPath(destination);
   await mkdir(destination, { recursive: true });
-  const temp = `${target}.tmp-${process.pid}`;
-  await writeFile(temp, `${JSON.stringify(ownership, null, 2)}\n`, { mode: 0o600 });
-  await rename(temp, target);
+  await atomicWrite(target, `${JSON.stringify(ownership, null, 2)}\n`);
 }
 export async function readOwnership(destination: string): Promise<Ownership | undefined> {
   if (!existsSync(ownPath(destination))) return undefined;
@@ -43,6 +49,10 @@ export async function recordWrite(destination: string, target: string, content: 
     relative in ownership.files ? ownership.files[relative].original : existsSync(target) ? await readFile(target, "utf8") : null;
   ownership.files[relative] = { original, generated: content, generatedHash: hash(content) };
   await save(destination, ownership);
+}
+export async function writeManagedFile(destination: string, target: string, content: string): Promise<void> {
+  await recordWrite(destination, target, content);
+  await atomicWrite(target, content);
 }
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -79,53 +89,75 @@ function parseConfig(content: string): Json {
   return value;
 }
 
-export async function cleanupFiles(destination: string, dryRun = false): Promise<CleanupResult> {
+export async function planCleanupFiles(destination: string): Promise<CleanupPlan> {
   const ownership = await readOwnership(destination);
-  const result: CleanupResult = { restored: [], removed: [], conflicts: [] };
-  if (!ownership) return result;
+  const preview: CleanupResult = { restored: [], removed: [], conflicts: [] };
+  const actions: CleanupAction[] = [];
+  if (!ownership) return { destination, actions, preview };
   for (const [relative, entry] of Object.entries(ownership.files)) {
     const target = path.join(destination, relative);
     if (await isSymlink(target) || (relative.startsWith("agents/") && await isSymlink(path.join(destination, "agents")))) {
-      result.conflicts.push(relative); continue;
+      preview.conflicts.push(relative); continue;
     }
     if (!existsSync(target) && entry.original === null) {
-      if (!dryRun) { delete ownership.files[relative]; await save(destination, ownership); }
+      actions.push({ relative, entry, current: null });
       continue;
     }
     const current = existsSync(target) ? await readFile(target, "utf8") : null;
     if (current === entry.original) {
-      if (!dryRun) { delete ownership.files[relative]; await save(destination, ownership); }
+      actions.push({ relative, entry, current });
       continue;
     }
     let replacement: string | null;
     if (current === null || hash(current) === entry.generatedHash) replacement = entry.original;
     else if (relative === "opencode.json" || relative === "opencode.jsonc") {
-      if (relative === "opencode.jsonc") { result.conflicts.push(relative); continue; }
+      if (relative === "opencode.jsonc") { preview.conflicts.push(relative); continue; }
       try {
         const conflicts: string[] = [];
         const before = entry.original === null ? absent : parseConfig(entry.original);
         const merged = revert(before, parseConfig(entry.generated), parseConfig(current), relative, conflicts);
-        if (conflicts.length) { result.conflicts.push(...conflicts); continue; }
+        if (conflicts.length) { preview.conflicts.push(...conflicts); continue; }
         replacement = merged === absent ? null : `${JSON.stringify(merged, null, 2)}\n`;
-      } catch { result.conflicts.push(relative); continue; }
-    } else { result.conflicts.push(relative); continue; }
-    if (replacement === null) result.removed.push(relative); else result.restored.push(relative);
-    if (!dryRun) {
-      if (replacement === null) await rm(target);
-      else {
-        const temp = `${target}.tmp-${process.pid}`;
-        await writeFile(temp, replacement, { mode: 0o600 });
-        await rename(temp, target);
-      }
-      delete ownership.files[relative];
-      await save(destination, ownership);
-    }
+      } catch { preview.conflicts.push(relative); continue; }
+    } else { preview.conflicts.push(relative); continue; }
+    if (replacement === null) preview.removed.push(relative); else preview.restored.push(relative);
+    actions.push({ relative, entry, current, replacement });
   }
-  if (!dryRun && !Object.keys(ownership.files).length) {
+  return { destination, actions, preview };
+}
+export async function applyCleanupPlan(plan: CleanupPlan): Promise<CleanupResult> {
+  const { destination } = plan;
+  const ownership = await readOwnership(destination);
+  const result: CleanupResult = { restored: [], removed: [], conflicts: [...plan.preview.conflicts] };
+  if (!ownership) {
+    result.conflicts.push(...plan.actions.map(action => action.relative));
+    return result;
+  }
+  for (const action of plan.actions) {
+    const { relative, entry, current, replacement } = action;
+    const target = path.join(destination, relative);
+    if (!same(ownership.files[relative], entry) ||
+        await isSymlink(target) || (relative.startsWith("agents/") && await isSymlink(path.join(destination, "agents"))) ||
+        (existsSync(target) ? await readFile(target, "utf8") : null) !== current) {
+      result.conflicts.push(relative);
+      continue;
+    }
+    if (replacement !== undefined) {
+      if (replacement === null) { await rm(target); result.removed.push(relative); }
+      else { await atomicWrite(target, replacement); result.restored.push(relative); }
+    }
+    delete ownership.files[relative];
+    await save(destination, ownership);
+  }
+  if (!Object.keys(ownership.files).length) {
     await rm(ownPath(destination));
     const agents = path.join(destination, "agents");
     if (existsSync(agents) && !(await readdir(agents)).length) await rmdir(agents);
     if (!(await readdir(destination)).length) await rmdir(destination);
   }
   return result;
+}
+export async function cleanupFiles(destination: string, dryRun = false): Promise<CleanupResult> {
+  const plan = await planCleanupFiles(destination);
+  return dryRun ? plan.preview : applyCleanupPlan(plan);
 }

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadCatalogue } from "../src/catalogue.js";
 import { recommend } from "../src/recommend.js";
-import { generateConfig, installConfiguration, readExistingConfig, readSavedRecommendation } from "../src/opencode.js";
+import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig, readSavedRecommendation } from "../src/opencode.js";
 import { generateAgent } from "../src/agents.js";
 import type { HardwareInfo } from "../src/types.js";
 
@@ -80,6 +80,18 @@ test("JSONC with comments and trailing commas is merged in place", async () => {
   assert.equal(result.backupPath, undefined);
 });
 
+test("installation plan uses the existing JSONC path and rejects changes after preview", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-plan-"));
+  const configPath = path.join(destination, "opencode.jsonc");
+  await writeFile(configPath, '{ "plugin": ["original"] }\n');
+  const plan = await planInstallation(destination, recommend((await loadCatalogue()).models, hardware));
+  assert.equal(plan.configPath, configPath);
+  assert.ok(plan.files.some(file => file.path === configPath));
+  await writeFile(configPath, '{ "plugin": ["new"] }\n');
+  await assert.rejects(applyInstallationPlan(plan), /changed since the setup preview/);
+  assert.deepEqual((await readExistingConfig(configPath)).plugin, ["new"]);
+});
+
 test("saved version 2 state restores the exact model assignments", async () => {
   const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-v2-"));
   const catalogue = await loadCatalogue();
@@ -119,5 +131,10 @@ test("missing or malformed saved state fails with setup guidance", async () => {
   const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-missing-state-"));
   await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
   await writeFile(path.join(destination, "local-coder-state.json"), "not json");
+  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
+  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+    version: 2, configuredAt: "today", preset: "balanced", tier: "HIGH",
+    roles: { orchestrator: "valid:tag", coder: 3, researcher: "valid:tag", reviewer: "valid:tag" }
+  }));
   await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
 });

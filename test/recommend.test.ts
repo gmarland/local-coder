@@ -55,7 +55,19 @@ test("custom role choices are deduplicated for storage", async () => {
   const { models } = await loadCatalogue();
   const base = recommend(models, machine(64));
   const small = models[0];
-  const custom = withCustomAssignments(base, { orchestrator: small, coder: small, researcher: small, reviewer: small });
+  const custom = withCustomAssignments(base, { orchestrator: small, coder: small, researcher: small, reviewer: small }, machine(64));
   assert.equal(custom.uniqueModels.length, 1);
   assert.equal(custom.storageGB, small.storageGB);
+});
+
+test("recommendations deduplicate by Ollama tag and refresh custom disk warnings", async () => {
+  const { models } = await loadCatalogue();
+  const duplicate = { ...models[0], id: "alternate-id", quality: models[0].quality + 1 };
+  const base = recommend([models[0], duplicate], machine(16, 30));
+  assert.equal(base.uniqueModels.length, 1);
+  const larger = { ...models[0], id: "manual-large", ollamaModel: "manual:large", storageGB: 28 };
+  const custom = withCustomAssignments(base, { orchestrator: larger, coder: larger, researcher: larger, reviewer: larger }, machine(16, 30));
+  assert.equal(custom.uniqueModels.length, 1);
+  assert.equal(custom.storageGB, 28);
+  assert.match(custom.warnings.join(" "), /Models need 28 GB/);
 });

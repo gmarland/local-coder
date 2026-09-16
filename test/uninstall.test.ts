@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cleanupFiles, recordWrite } from "../src/ownership.js";
+import { applyCleanupPlan, cleanupFiles, planCleanupFiles, recordWrite } from "../src/ownership.js";
 import { finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "../src/registry.js";
 import { installConfiguration } from "../src/opencode.js";
 import { loadCatalogue } from "../src/catalogue.js";
@@ -66,6 +66,19 @@ test("uninstall reports changes to generated agent files", async () => {
   const result = await cleanupFiles(dest);
   assert.deepEqual(result.conflicts, ["AGENTS.md"]);
   assert.equal(await readFile(file, "utf8"), "edited\n");
+});
+
+test("cleanup plan preserves a file edited after preview", async () => {
+  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-plan-conflict-"));
+  const file = path.join(dest, "AGENTS.md");
+  await recordWrite(dest, file, "generated\n");
+  await writeFile(file, "generated\n");
+  const plan = await planCleanupFiles(dest);
+  assert.deepEqual(plan.preview.removed, ["AGENTS.md"]);
+  await writeFile(file, "user edit\n");
+  const result = await applyCleanupPlan(plan);
+  assert.deepEqual(result.conflicts, ["AGENTS.md"]);
+  assert.equal(await readFile(file, "utf8"), "user edit\n");
 });
 
 test("model registry keeps shared and preexisting models, then releases managed models", async () => {
