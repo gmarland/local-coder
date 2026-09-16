@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, readdir, realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { loadCatalogue } from "../src/models/catalogue.js";
@@ -8,10 +10,12 @@ import { recommend } from "../src/models/recommend.js";
 import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
 import { generateAgent } from "../src/opencode/agents.js";
+import { launchCommand } from "../src/commands/setup.js";
 import type { HardwareInfo } from "../src/types.js";
 
 const hardware: HardwareInfo = { platform: "darwin", osName: "macOS", architecture: "arm64", cpu: "M4", totalMemoryGB: 64,
   availableMemoryGB: 48, diskAvailableGB: 500, commands: { ollama: true, opencode: true, git: true, rg: true } };
+const execFileAsync = promisify(execFile);
 
 test("configuration generation preserves unrelated settings and providers", async () => {
   const setup = recommend((await loadCatalogue()).models, hardware);
@@ -38,6 +42,9 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /call task with subagent_type reviewer/);
   assert.match(orchestrator, /relevant user request.*constraints.*relevant research.*expected outcome/);
   assert.match(orchestrator, /Never reply "use the coder"/);
+  assert.match(orchestrator, /Independently read or search the repository/);
+  assert.match(orchestrator, /call coder again ONCE/);
+  assert.match(orchestrator, /Never report completion solely from coder's words/);
 });
 
 test("specialists have the intended edit, shell, and web permissions", async () => {
@@ -48,6 +55,12 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(coder, /bash: allow/);
   assert.match(coder, /Implement the delegated request directly in the repository/);
   assert.match(coder, /Never return code for the user to paste/);
+  assert.match(coder, /edit, write, or patch tool and check that the tool succeeded/);
+  assert.match(coder, /READ the changed file again/);
+  assert.match(coder, /git status and git diff/);
+  assert.match(coder, /NEVER claim that a file was modified unless/);
+  assert.match(coder, /STATUS: SUCCESS or FAILURE/);
+  assert.match(coder, /If no editing tool is available or it fails, return STATUS: FAILURE/);
   for (const role of ["researcher", "reviewer"] as const) {
     const agent = generateAgent(role, setup);
     assert.match(agent, /mode: subagent/);
@@ -56,6 +69,16 @@ test("specialists have the intended edit, shell, and web permissions", async () 
     assert.match(agent, /task: deny/);
   }
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
+});
+
+test("launch command targets the repository root when run from bin", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-root-"));
+  await mkdir(path.join(root, "bin"));
+  await execFileAsync("git", ["init", "-q", root]);
+  const canonicalRoot = await realpath(root);
+  const options = { command: "setup", dryRun: false, yes: true, backup: false, noPull: false, skipValidation: false };
+  assert.equal(await launchCommand(options, path.join(root, ".opencode"), path.join(root, "bin")), `opencode ${JSON.stringify(canonicalRoot)}`);
+  assert.equal(await launchCommand({ ...options, project: root }, path.join(root, ".opencode"), path.join(root, "bin")), `opencode ${JSON.stringify(root)}`);
 });
 
 test("installation backs up and merges existing configuration and agents", async () => {

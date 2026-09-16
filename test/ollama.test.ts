@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deleteModel, installedModelDigests, modelAdvertisesTools, probeDelegation, probeToolCalling, testModel } from "../src/ollama.js";
+import { deleteModel, installedModelDigests, modelAdvertisesTools, probeDelegation, probeRepositoryEditing, probeToolCalling, testModel } from "../src/ollama.js";
 
 const jsonResponse = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status,
@@ -60,6 +60,41 @@ test("delegation probe requires a structured task call selecting coder", async (
   assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
     name: "task", arguments: { subagent_type: "researcher", description: "Research", prompt: "Look up README syntax" }
   } }] } }] })), { ok: false, reason: "wrong-arguments" });
+});
+
+test("coder probe executes tools and checks the temporary file independently", async () => {
+  let round = 0;
+  const result = await probeRepositoryEditing("test-model", (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.deepEqual(body.tools.map((tool: { function: { name: string } }) => tool.function.name), ["read_file", "edit_file"]);
+    assert.equal(body.think, false);
+    if (round === 1) assert.equal(body.messages.at(-1).content, "ORIGINAL");
+    if (round === 2) assert.equal(body.messages.at(-1).content, "File written. Call read_file to verify test.txt.");
+    const name = round === 0 || round === 2 ? "read_file" : "edit_file";
+    const args = name === "read_file" ? { path: "test.txt" } : { path: "test.txt", content: "MODIFIED" };
+    round++;
+    return jsonResponse({ choices: [{ message: { tool_calls: [{ id: `call-${round}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] });
+  });
+  assert.deepEqual(result, { ok: true, edited: true, readAfterEdit: true });
+  assert.equal(round, 3);
+});
+
+test("coder probe rejects a success claim without a filesystem edit", async () => {
+  const result = await probeRepositoryEditing("test-model", () => jsonResponse({ choices: [{ message: { content: "STATUS: SUCCESS. test.txt contains MODIFIED." } }] }));
+  assert.deepEqual(result, { ok: false, edited: false, readAfterEdit: false, reason: "missing-tool-call" });
+});
+
+test("coder probe rejects an edit without post-edit verification", async () => {
+  let round = 0;
+  const result = await probeRepositoryEditing("test-model", () => {
+    const name = round === 0 ? "read_file" : "edit_file";
+    round++;
+    return jsonResponse({ choices: [{ message: round > 2 ? { content: "STATUS: SUCCESS" } : { tool_calls: [{
+      id: `call-${round}`, type: "function", function: { name, arguments: JSON.stringify(name === "read_file" ?
+        { path: "test.txt" } : { path: "test.txt", content: "MODIFIED" }) }
+    }] } }] });
+  });
+  assert.deepEqual(result, { ok: false, edited: true, readAfterEdit: false, reason: "missing-tool-call" });
 });
 
 test("response smoke test allows thinking models to produce a final answer", async () => {

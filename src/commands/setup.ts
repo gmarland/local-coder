@@ -6,7 +6,7 @@ import * as p from "@clack/prompts";
 import { detectHardware } from "../hardware.js";
 import { compatibleModels, recommend, withCustomAssignments } from "../models/recommend.js";
 import { applyInstallationPlan, planInstallation, readExistingConfig } from "../opencode/config.js";
-import { installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeDelegation, probeToolCalling, pullModel, testModel } from "../ollama.js";
+import { installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeToolCalling, pullModel, testModel } from "../ollama.js";
 import { recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
 import { roles, type Model, type Preset, type Recommendation } from "../types.js";
 import { cancelled, showRecommendation, type Options } from "./common.js";
@@ -19,14 +19,17 @@ async function agentsDiscoverable(destination: string): Promise<boolean> {
     return roles.every(role => new RegExp(`(^|\\n)${role} \\(`).test(stdout));
   } catch { return false; }
 }
-function launchCommand(options: Options, destination: string): string {
+export async function launchCommand(options: Options, destination: string, cwd = process.cwd()): Promise<string> {
   if (options.project !== undefined) return `opencode ${JSON.stringify(path.dirname(destination))}`;
-  const cwd = process.cwd();
-  const target = path.basename(cwd) === "bin" ? "/absolute/path/to/project" : cwd;
+  let target = cwd;
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 5000 });
+    if (stdout.trim()) target = stdout.trim();
+  } catch { /* A non-git project uses the current directory. */ }
   return `opencode ${JSON.stringify(target)}`;
 }
 function probeFailure(reason: string | undefined): string {
-  if (reason === "missing-tool-call") return "returned the requested call as text instead of structured tool_calls";
+  if (reason === "missing-tool-call") return "did not complete the required tool actions";
   if (reason === "wrong-tool") return "called an unexpected tool";
   if (reason === "wrong-arguments") return "returned malformed tool arguments";
   return "tool-call request failed";
@@ -120,6 +123,11 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     runtimeChecks.push(`${model.name} structured tool call: ${probe.ok ? "✓" : `failed (${probeFailure(probe.reason)})`}`);
     runtimeValid = runtimeValid && responds && advertised && probe.ok;
   }
+  if (!options.skipValidation && present.has(result.assignments.coder.ollamaModel) && runtimeValid) {
+    const editing = await probeRepositoryEditing(result.assignments.coder.ollamaModel);
+    runtimeChecks.push(`Coder changes and re-reads a temporary file: ${editing.ok ? "✓" : `failed (${probeFailure(editing.reason)})`}`);
+    runtimeValid = runtimeValid && editing.ok;
+  }
   if (!options.skipValidation && present.has(result.assignments.orchestrator.ollamaModel) && runtimeValid) {
     const delegation = await probeDelegation(result.assignments.orchestrator.ollamaModel);
     runtimeChecks.push(`Orchestrator selects coder via task: ${delegation.ok ? "✓" : `warning (${probeFailure(delegation.reason)})`}`);
@@ -141,5 +149,5 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   const checks: string[] = [`OpenCode config parses: ${configValid ? "✓" : "failed"}`, `Agent definitions loaded by OpenCode: ${agentsValid ? "✓" : "failed"}`, ...runtimeChecks];
   const setupValid = configValid && agentsValid && runtimeValid;
   p.note(checks.join("\n"), "Validation");
-  p.outro(setupValid ? `Setup complete. OpenCode edits the project directory passed here:\n\n  ${launchCommand(options, dest)}\n\nConfig: ${install.configPath}` : `Configuration written, but runtime setup is incomplete. Resolve the warnings and rerun:\n\n  local-coder configure\n\nWhen ready, launch OpenCode with an explicit project path.\nConfig: ${install.configPath}`);
+  p.outro(setupValid ? `Setup complete. OpenCode edits the project directory passed here:\n\n  ${await launchCommand(options, dest)}\n\nConfig: ${install.configPath}` : `Configuration written, but runtime setup is incomplete. Resolve the warnings and rerun:\n\n  local-coder configure\n\nWhen ready, launch OpenCode with an explicit project path.\nConfig: ${install.configPath}`);
 }

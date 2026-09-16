@@ -78,13 +78,16 @@ User
   |
   v
 Orchestrator
-  |
-  +---- implementation ----> Coder
   +---- external knowledge -> Researcher
-  +---- verification -------> Reviewer
+  +---- implementation ----> Coder -> filesystem change -> Coder verification
+  +---- independent file verification
+  +---- substantial review --> Reviewer
+  |
+  v
+User
 ```
 
-For example, `> Add a health endpoint to the API and update the README.` causes the orchestrator to invoke the coder through OpenCode's task tool. The coder searches the repository, edits the implementation and README, and runs appropriate tests. For a substantial change, the orchestrator may then invoke the reviewer and send actionable fixes back to the coder before reporting completion. The user does not need to switch agents.
+For example, `> Add a health endpoint to the API and update the README.` causes the orchestrator to invoke the coder through OpenCode's task tool. The coder locates and reads files, uses an editing tool, reads the result, checks git diff where available, and runs appropriate tests. The orchestrator then reads or searches the changed files itself to confirm the requested outcome. If that check fails, it gives the coder one automatic repair attempt and verifies again. For a substantial change, it may also invoke the reviewer and send actionable fixes back to the coder. The user does not need to switch agents. Specialist output is a claim until checked: **FILESYSTEM STATE > AGENT CLAIM**.
 
 The orchestrator can read and search but cannot edit files or run shell commands. The coder can edit files and run builds and tests. The researcher and reviewer are read-only. Researcher web fetch is enabled; OpenCode's web search tool is available with an OpenCode or OpenCode Go provider, or when `OPENCODE_ENABLE_EXA=1` or `OPENCODE_ENABLE_PARALLEL=1` is set. Agent descriptions and permissions use OpenCode's documented Markdown format.
 
@@ -100,9 +103,9 @@ CLI workflows live in [`src/commands/`](src/commands), model selection in [`src/
 
 ## Safety and validation
 
-Before changing anything, setup shows the exact models, estimated download size, and files it will write. Pulls use Ollama's own resumable downloader and visible progress. Before writing configuration, setup checks that Ollama is reachable, each model responds to a tiny prompt, advertises tools, and returns a real structured `tool_calls` response to a harmless synthetic tool. JSON merely printed as assistant text is rejected because OpenCode cannot safely execute it. It also asks the orchestrator model to select the coder through a synthetic task call for a sample edit. Failure of that additional delegation check warns about reliability but does not block installation. `--skip-validation` bypasses these inference checks with a prominent warning; `--no-pull` creates configuration only when models are unavailable.
+Before changing anything, setup shows the exact models, estimated download size, and files it will write. Pulls use Ollama's own resumable downloader and visible progress. Before writing configuration, setup checks that Ollama is reachable, each model responds to a tiny prompt, advertises tools, and returns a real structured `tool_calls` response to a harmless synthetic tool. JSON merely printed as assistant text is rejected because OpenCode cannot execute it. Setup also asks the coder model to read, modify, and reread a temporary file through a narrow tool interface, then checks the file on disk. A textual success claim fails this check. The probe does not exercise the full OpenCode tool harness, so OpenCode agent discovery and permissions are checked separately. It also asks the orchestrator model to select the coder through a synthetic task call for a sample edit. Failure of that delegation check warns about reliability but does not block installation. `--skip-validation` bypasses these inference checks with a prominent warning; `--no-pull` creates configuration only when models are unavailable.
 
-OpenCode edits the directory it is launched against. Setup prints an explicit `opencode /path/to/project` command; do not launch it from the `local-coder/bin` directory when you intend to modify the repository above it.
+OpenCode edits the directory it is launched against. Setup prints an explicit `opencode /path/to/project` command. When setup runs inside a Git repository, that command uses the repository root, including when setup was invoked from its `bin` directory. A `--project` path is used as given. Starting a separate OpenCode session from a nested directory may choose a different active location; launch with the printed project path for repository edits.
 
 ## Development
 
