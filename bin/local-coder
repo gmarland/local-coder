@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+
+if [ ! -f "$root/dist/src/cli.js" ]; then
+  printf '%s\n' 'local-coder: build missing; run npm install && npm run build' >&2
+  exit 1
+fi
+
+exec node "$root/dist/src/cli.js" "$@"
