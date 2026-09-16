@@ -19,6 +19,17 @@ export async function installedModels(): Promise<string[]> {
     return data.models?.map(m => m.name) || [];
   } catch { return []; }
 }
+export async function installedModelDigests(request: FetchLike = fetch): Promise<Map<string, string | null>> {
+  const r = await request(`${endpoint}/api/tags`, { signal: AbortSignal.timeout(3000) });
+  if (!r.ok) throw new Error(`Ollama model list failed: HTTP ${r.status}`);
+  const data = await r.json() as { models?: { name: string; digest?: string }[] };
+  return new Map((data.models || []).map(m => [m.name, m.digest || null]));
+}
+export async function deleteModel(model: string, request: FetchLike = fetch): Promise<void> {
+  const r = await request(`${endpoint}/api/delete`, { method: "DELETE", headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(30000), body: JSON.stringify({ model }) });
+  if (!r.ok) throw new Error(`Ollama could not delete ${model}: HTTP ${r.status}`);
+}
 export async function pullModel(model: Model): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("ollama", ["pull", model.ollamaModel], { stdio: "inherit" });

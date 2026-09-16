@@ -21,7 +21,13 @@ export interface Recommendation {
   tier: CapabilityTier; preset: Preset; assignments: Record<Role, Model>;
   uniqueModels: Model[]; storageGB: number; warnings: string[];
 }
-export interface SavedState {
-  version: 1; configuredAt: string; preset: Preset; tier: CapabilityTier;
+interface SavedStateBase {
+  configuredAt: string; preset: Preset; tier: CapabilityTier;
   roles: Record<Role, string>; storageGB: number;
 }
+export interface SavedStateV1 extends SavedStateBase { version: 1 }
+export interface SavedStateV2 extends SavedStateBase {
+  version: 2;
+  assignments: Record<Role, Model>;
+}
+export type SavedState = SavedStateV1 | SavedStateV2;

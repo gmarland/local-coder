@@ -27,15 +27,26 @@ local-coder
 local-coder --project
 local-coder --project /path/to/repository
 local-coder configure
+local-coder reinstall
+local-coder uninstall --dry-run
+local-coder uninstall
+local-coder uninstall --project /path/to/repository
 local-coder status
 local-coder models
 ```
+
+`reinstall` rebuilds the OpenCode configuration and agent files from the last saved selection. It does not download, replace, test, or remove any Ollama models. Use `--project` to restore a project-local setup, and add `--dry-run` to preview the files and assignments without writing anything.
+
+`uninstall` removes the setup in the selected scope. It restores files that existed before setup, removes files local-coder created, and deletes Ollama models that local-coder downloaded for that scope once no other local-coder scope uses them. It preserves models that were already installed, shared models, unrelated OpenCode settings, and user edits made after setup. Preview the removal plan with `--dry-run`; use `--yes` for automation. Ollama must be running to remove models. If it is unavailable, rerun `uninstall` when it is running.
+
+Setup records file ownership in `local-coder-ownership.json` beside the generated config and model ownership in `${XDG_DATA_HOME:-~/.local/share}/local-coder/registry.json`. These records let uninstall identify what it may remove. Older setups without an ownership record can have exactly matching generated agent files removed, but their prior config and model ownership cannot be reconstructed reliably. Uninstall reports those items for manual review. Timestamped backups are retained because they may contain user files.
 
 Useful automation and preview options:
 
 ```sh
 local-coder --dry-run --yes --preset balanced
 local-coder --yes --preset minimal --no-pull
+local-coder --yes --backup
 ```
 
 Presets are `balanced`, `quality`, `fast`, and `minimal`. The interactive custom flow allows a different compatible model for every role or a manually entered Ollama tag. A single model may serve several roles; downloads and storage estimates are deduplicated.
@@ -55,9 +66,10 @@ agents/
   researcher.md
   reviewer.md
 local-coder-state.json
+local-coder-ownership.json
 ```
 
-Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Files that the CLI replaces receive timestamped backups. Invalid existing configuration causes setup to stop without overwriting it.
+Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Interactive setup asks whether to create timestamped backups before replacing existing generated files and defaults to overwriting without backups. Automated `--yes` runs also overwrite without backups unless `--backup` is supplied. Invalid existing configuration causes setup to stop without overwriting it.
 
 The orchestrator is OpenCode's primary agent. It delegates all repository modifications to the coder, unfamiliar domain work to the read-only researcher, and significant independent review to the read-only reviewer. Delegation prompts must include the concrete request and relevant context. The orchestrator cannot edit files or run implementation commands itself. Agent descriptions and permissions are generated in OpenCode's documented Markdown format.
 
@@ -82,7 +94,7 @@ make build
 make test
 ```
 
-Tests cover catalogue validation, capability tiers, 16/32/64/128 GB Macs, NVIDIA 24/48 GB profiles, memory and disk failures, every preset, custom deduplication, config generation, backups, safe handling of malformed existing config, and structured tool-call validation—including rejection of tool-shaped JSON returned as ordinary text.
+Tests cover catalogue validation, capability tiers, 16/32/64/128 GB Macs, NVIDIA 24/48 GB profiles, memory and disk failures, every preset, custom deduplication, config generation, optional backups, safe handling of malformed existing config, and structured tool-call validation—including rejection of tool-shaped JSON returned as ordinary text.
 
 ## Current format and catalogue sources
 

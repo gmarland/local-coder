@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { modelAdvertisesTools, probeToolCalling } from "../src/ollama.js";
+import { deleteModel, installedModelDigests, modelAdvertisesTools, probeToolCalling } from "../src/ollama.js";
 
 const jsonResponse = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status,
@@ -45,4 +45,16 @@ test("tool checks fail closed on HTTP and request errors", async () => {
   assert.deepEqual(await probeToolCalling("test-model", async () => { throw new Error("offline"); }), { ok: false, reason: "request-failed" });
   assert.equal(await modelAdvertisesTools("test-model", () => jsonResponse({ capabilities: ["completion", "tools"] })), true);
   assert.equal(await modelAdvertisesTools("test-model", () => jsonResponse({ capabilities: ["completion"] })), false);
+});
+
+test("model removal uses Ollama's delete endpoint and reports failure", async () => {
+  const models = await installedModelDigests(() => jsonResponse({ models: [{ name: "owned:latest", digest: "abc" }] }));
+  assert.equal(models.get("owned:latest"), "abc");
+  await deleteModel("owned:latest", (input, init) => {
+    assert.match(String(input), /\/api\/delete$/);
+    assert.equal(init?.method, "DELETE");
+    assert.deepEqual(JSON.parse(String(init?.body)), { model: "owned:latest" });
+    return jsonResponse({});
+  });
+  await assert.rejects(deleteModel("owned:latest", () => jsonResponse({}, 500)), /HTTP 500/);
 });

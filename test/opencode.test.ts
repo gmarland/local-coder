@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadCatalogue } from "../src/catalogue.js";
 import { recommend } from "../src/recommend.js";
-import { generateConfig, installConfiguration, readExistingConfig } from "../src/opencode.js";
+import { generateConfig, installConfiguration, readExistingConfig, readSavedRecommendation } from "../src/opencode.js";
 import { generateAgent } from "../src/agents.js";
 import type { HardwareInfo } from "../src/types.js";
 
@@ -37,7 +37,7 @@ test("installation backs up and merges existing configuration and agents", async
   await mkdir(path.join(destination, "agents"));
   await writeFile(path.join(destination, "opencode.json"), '{ "plugin": ["kept"] }\n');
   await writeFile(path.join(destination, "agents", "coder.md"), "existing\n");
-  const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware));
+  const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware), { backupExisting: true });
   assert.ok(result.backupPath);
   const config = JSON.parse(await readFile(result.configPath, "utf8"));
   assert.deepEqual(config.plugin, ["kept"]);
@@ -45,6 +45,21 @@ test("installation backs up and merges existing configuration and agents", async
   for (const role of ["orchestrator", "coder", "researcher", "reviewer"])
     assert.match(await readFile(path.join(destination, "agents", `${role}.md`), "utf8"), new RegExp(`model: ollama/`));
   assert.ok((await readdir(path.join(destination, "agents"))).some(name => name.startsWith("coder.md.backup-")));
+  const state = JSON.parse(await readFile(path.join(destination, "local-coder-state.json"), "utf8"));
+  assert.equal(state.version, 2);
+  assert.equal(state.assignments.coder.ollamaModel, state.roles.coder);
+});
+
+test("installation overwrites generated files without creating backups by default", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-overwrite-"));
+  await mkdir(path.join(destination, "agents"));
+  await writeFile(path.join(destination, "opencode.json"), '{ "plugin": ["kept"] }\n');
+  await writeFile(path.join(destination, "agents", "coder.md"), "existing\n");
+  const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware));
+  assert.equal(result.backupPath, undefined);
+  assert.deepEqual((await readExistingConfig(result.configPath)).plugin, ["kept"]);
+  assert.equal((await readdir(destination)).some(name => name.startsWith("opencode.json.backup-")), false);
+  assert.equal((await readdir(path.join(destination, "agents"))).some(name => name.startsWith("coder.md.backup-")), false);
 });
 
 test("invalid existing config is never overwritten", async () => {
@@ -62,5 +77,47 @@ test("JSONC with comments and trailing commas is merged in place", async () => {
   const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware));
   assert.equal(result.configPath, file);
   assert.deepEqual((await readExistingConfig(file)).plugin, ["kept"]);
+  assert.equal(result.backupPath, undefined);
+});
+
+test("saved version 2 state restores the exact model assignments", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-v2-"));
+  const catalogue = await loadCatalogue();
+  const original = recommend(catalogue.models, hardware);
+  await installConfiguration(destination, original);
+  const restored = await readSavedRecommendation(destination, catalogue.models);
+  assert.deepEqual(restored.assignments, original.assignments);
+  assert.deepEqual(restored.uniqueModels.map(model => model.ollamaModel), original.uniqueModels.map(model => model.ollamaModel));
+});
+
+test("legacy state restores catalogue and manual Ollama models", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-v1-"));
+  const catalogue = await loadCatalogue();
+  const known = catalogue.models[0].ollamaModel;
+  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+    version: 1, configuredAt: new Date().toISOString(), preset: "balanced", tier: "HIGH", storageGB: 1,
+    roles: { orchestrator: known, coder: "private-code-model:latest", researcher: known, reviewer: known }
+  }));
+  const restored = await readSavedRecommendation(destination, catalogue.models);
+  assert.equal(restored.assignments.orchestrator.ollamaModel, known);
+  assert.equal(restored.assignments.coder.ollamaModel, "private-code-model:latest");
+  assert.equal(restored.assignments.coder.contextWindow, 32768);
+});
+
+test("reinstall mode backs up and replaces an invalid OpenCode config", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-repair-"));
+  const file = path.join(destination, "opencode.json");
+  await writeFile(file, "{ damaged");
+  const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware), { recoverInvalidConfig: true });
+  assert.equal(result.recoveredInvalidConfig, true);
   assert.ok(result.backupPath);
+  assert.equal(await readFile(result.backupPath!, "utf8"), "{ damaged");
+  assert.equal((await readExistingConfig(file)).default_agent, "orchestrator");
+});
+
+test("missing or malformed saved state fails with setup guidance", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-missing-state-"));
+  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
+  await writeFile(path.join(destination, "local-coder-state.json"), "not json");
+  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
 });
