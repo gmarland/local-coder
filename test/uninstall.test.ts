@@ -5,11 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { applyCleanupPlan, cleanupFiles, planCleanupFiles, recordWrite } from "../src/ownership.js";
-import { finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "../src/registry.js";
-import { installConfiguration } from "../src/opencode.js";
-import { loadCatalogue } from "../src/catalogue.js";
-import { recommend } from "../src/recommend.js";
+import { applyCleanupPlan, cleanupFiles, planCleanupFiles, recordWrite } from "../src/persistence/ownership.js";
+import { finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "../src/persistence/registry.js";
+import { installConfiguration } from "../src/opencode/config.js";
+import { loadCatalogue } from "../src/models/catalogue.js";
+import { recommend } from "../src/models/recommend.js";
 import type { HardwareInfo } from "../src/types.js";
 
 const execFileAsync = promisify(execFile);

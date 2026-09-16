@@ -3,10 +3,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { generateAgent, generalInstructions } from "./agents.js";
-import { roles, type Model, type Recommendation, type Role, type SavedState } from "./types.js";
-import { writeManagedFile } from "./ownership.js";
-import { summarizeAssignments } from "./recommend.js";
-import { isModel, isRecord, isSavedState } from "./validation.js";
+import { roles, type Recommendation, type Role, type SavedState } from "../types.js";
+import { writeManagedFile } from "../persistence/ownership.js";
 
 export interface InstallResult { configPath: string; backupPath?: string; created: string[]; recoveredInvalidConfig?: boolean }
 export interface InstallOptions { recoverInvalidConfig?: boolean; backupExisting?: boolean }
@@ -96,34 +94,4 @@ export async function applyInstallationPlan(plan: InstallationPlan, options: Ins
 }
 export async function installConfiguration(destination: string, recommendation: Recommendation, options: InstallOptions = {}): Promise<InstallResult> {
   return applyInstallationPlan(await planInstallation(destination, recommendation, options), options);
-}
-
-function fallbackModel(ollamaModel: string): Model {
-  return { id: `restored-${ollamaModel}`, name: ollamaModel, ollamaModel,
-    roles: ["orchestrator", "coding", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1,
-    storageGB: 0, contextWindow: 32768, toolCalling: true, agenticCoding: true, speed: 1, quality: 1,
-    notes: "Restored from saved local-coder state." };
-}
-export async function readSavedRecommendation(destination: string, catalogueModels: Model[]): Promise<Recommendation> {
-  const statePath = path.join(destination, "local-coder-state.json");
-  let value: unknown;
-  try { value = JSON.parse(await readFile(statePath, "utf8")); }
-  catch (error) {
-    const reason = error instanceof Error && "code" in error && error.code === "ENOENT" ? "is missing" : "is invalid";
-    throw new Error(`Saved setup state ${reason} at ${statePath}; run local-coder setup to choose a configuration.`);
-  }
-  if (!isSavedState(value))
-    throw new Error(`Saved setup state is invalid at ${statePath}; run local-coder setup to choose a configuration.`);
-  const state = value;
-  const assignments = {} as Record<Role, Model>;
-  for (const role of roles) {
-    const tag = state.roles[role];
-    const snapshot = state.version === 2 && isRecord(state.assignments) ? state.assignments[role] : undefined;
-    assignments[role] = isModel(snapshot) && snapshot.ollamaModel === tag
-      ? snapshot
-      : catalogueModels.find(model => model.ollamaModel === tag) ?? fallbackModel(tag);
-  }
-  const summary = summarizeAssignments(assignments);
-  const storedSize = typeof state.storageGB === "number" && Number.isFinite(state.storageGB) && state.storageGB >= 0 ? state.storageGB : undefined;
-  return { preset: state.preset, tier: state.tier, assignments, ...summary, storageGB: storedSize ?? summary.storageGB, warnings: [] };
 }

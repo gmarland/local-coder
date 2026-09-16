@@ -1,4 +1,4 @@
-import type { Recommendation, Role } from "./types.js";
+import type { Recommendation, Role } from "../types.js";
 
 const prompts: Record<Role, { description: string; body: string }> = {
   orchestrator: { description: "Primary coordinator that delegates repository changes, research, and review to specialist agents", body: "Understand the request, form a concise plan, and coordinate the result. Delegate every repository modification or debugging task to @coder, unfamiliar domain or evidence gathering to @researcher, and independent review of significant changes to @reviewer. Every delegation prompt must be self-contained: include the user's concrete request, relevant paths and constraints, and the expected outcome. You may answer simple questions directly, but do not edit files or run implementation commands yourself. Present one coherent final result." },

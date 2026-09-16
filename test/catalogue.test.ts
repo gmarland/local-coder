@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadCatalogue } from "../src/catalogue.js";
+import { loadCatalogue } from "../src/models/catalogue.js";
 
 test("bundled catalogue parses and has unique agentic models", async () => {
   const catalogue = await loadCatalogue();

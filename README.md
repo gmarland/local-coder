@@ -77,9 +77,11 @@ The orchestrator is OpenCode's primary agent. It delegates all repository modifi
 
 The bundled, versioned [`catalog/models.json`](catalog/models.json) keeps model metadata separate from selection logic. Entries include Ollama tags, storage and memory budgets, roles, context, tool support, speed/quality weights, and explanatory notes. The bundled catalogue works fully offline and can be updated independently in a future release.
 
-Machine detection is isolated in [`src/hardware.ts`](src/hardware.ts). Recommendation logic in [`src/recommend.ts`](src/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Recommended-memory figures include practical headroom beyond quantised model weight; minimum-memory values are used only by the explicitly quality-maximising preset.
+Machine detection is isolated in [`src/hardware.ts`](src/hardware.ts). Recommendation logic in [`src/models/recommend.ts`](src/models/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Recommended-memory figures include practical headroom beyond quantised model weight; minimum-memory values are used only by the explicitly quality-maximising preset.
 
 The provider boundary is isolated in [`src/ollama.ts`](src/ollama.ts), allowing another OpenAI-compatible backend such as vLLM to be added without changing hardware or recommendation logic.
+
+CLI workflows live in [`src/commands/`](src/commands), model selection in [`src/models/`](src/models), OpenCode configuration and saved state in [`src/opencode/`](src/opencode), and ownership records in [`src/persistence/`](src/persistence). [`src/cli.ts`](src/cli.ts) remains the command entry point.
 
 ## Safety and validation
 

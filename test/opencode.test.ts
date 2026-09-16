@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadCatalogue } from "../src/catalogue.js";
-import { recommend } from "../src/recommend.js";
-import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig, readSavedRecommendation } from "../src/opencode.js";
-import { generateAgent } from "../src/agents.js";
+import { loadCatalogue } from "../src/models/catalogue.js";
+import { recommend } from "../src/models/recommend.js";
+import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
+import { readSavedRecommendation } from "../src/opencode/saved-state.js";
+import { generateAgent } from "../src/opencode/agents.js";
 import type { HardwareInfo } from "../src/types.js";
 
 const hardware: HardwareInfo = { platform: "darwin", osName: "macOS", architecture: "arm64", cpu: "M4", totalMemoryGB: 64,

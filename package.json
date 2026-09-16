@@ -6,7 +6,7 @@
   "bin": { "local-coder": "bin/local-coder", "setup-ai": "bin/local-coder" },
   "files": ["bin", "dist", "catalog"],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "test": "npm run build && node --test dist/test/*.test.js",
     "prepare": "npm run build"
   },

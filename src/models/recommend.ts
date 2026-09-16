@@ -1,4 +1,4 @@
-import { roles, type CapabilityTier, type HardwareInfo, type Model, type ModelRole, type Preset, type Recommendation, type Role } from "./types.js";
+import { roles, type CapabilityTier, type HardwareInfo, type Model, type ModelRole, type Preset, type Recommendation, type Role } from "../types.js";
 
 export function effectiveMemoryGB(h: HardwareInfo): number {
   return h.gpuVramGB ? Math.min(h.totalMemoryGB, h.gpuVramGB + Math.max(8, h.totalMemoryGB * 0.15)) : h.totalMemoryGB;

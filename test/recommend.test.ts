@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadCatalogue } from "../src/catalogue.js";
-import { classifyHardware, recommend, withCustomAssignments } from "../src/recommend.js";
+import { loadCatalogue } from "../src/models/catalogue.js";
+import { classifyHardware, recommend, withCustomAssignments } from "../src/models/recommend.js";
 import type { HardwareInfo, Preset } from "../src/types.js";
 
 const machine = (memory: number, disk = 500, gpuVramGB?: number): HardwareInfo => ({

@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import type { Catalogue, Model } from "./types.js";
+import type { Catalogue, Model } from "../types.js";
 import { isModel, isRecord } from "./validation.js";
 
-export async function loadCatalogue(path = fileURLToPath(new URL("../../catalog/models.json", import.meta.url))): Promise<Catalogue> {
+export async function loadCatalogue(path = fileURLToPath(new URL("../../../catalog/models.json", import.meta.url))): Promise<Catalogue> {
   const value: unknown = JSON.parse(await readFile(path, "utf8"));
   if (!isRecord(value)) throw new Error("catalogue must be an object");
   if (value.schemaVersion !== 1 || typeof value.updated !== "string" || !value.updated.trim() ||
