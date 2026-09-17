@@ -62,7 +62,10 @@ opencode.json
 AGENTS.md
 agents/
   orchestrator.md
+  explorer.md
+  planner.md
   coder.md
+  verifier.md
   researcher.md
   reviewer.md
 local-coder-state.json
@@ -71,31 +74,26 @@ local-coder-ownership.json
 
 Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Interactive setup asks whether to create timestamped backups before replacing existing generated files and defaults to overwriting without backups. Automated `--yes` runs also overwrite without backups unless `--backup` is supplied. Invalid existing configuration causes setup to stop without overwriting it.
 
-The orchestrator is OpenCode's primary, user-facing agent. Users normally interact only with it:
+The orchestrator is OpenCode's primary, user-facing agent. It selects a workflow according to the request:
 
 ```text
-User
-  |
-  v
-Orchestrator
-  +---- external knowledge -> Researcher
-  +---- implementation ----> Coder -> filesystem change -> Coder verification
-  +---- independent file verification
-  +---- substantial review --> Reviewer
-  |
-  v
-User
+Trivial:  Coder → Verifier
+Standard: Explorer → Coder → Verifier
+Complex:  Explorer → Planner → Coder → Verifier → Reviewer
+Domain:   Explorer + Researcher → Planner → Coder → Verifier → Reviewer
 ```
 
-For example, `> Add a health endpoint to the API and update the README.` causes the orchestrator to invoke the coder through OpenCode's task tool. The coder locates and reads files, uses an editing tool, reads the result, checks git diff where available, and runs appropriate tests. The orchestrator then reads or searches the changed files itself to confirm the requested outcome. If that check fails, it gives the coder one automatic repair attempt and verifies again. For a substantial change, it may also invoke the reviewer and send actionable fixes back to the coder. The user does not need to switch agents. Specialist output is a claim until checked: **FILESYSTEM STATE > AGENT CLAIM**.
+The explorer summarizes relevant repository context; the planner turns that and any research into an implementation plan. The coder locates and reads files, uses an editing tool, rereads the result, checks git diff where available, and runs appropriate immediate tests. The independent verifier checks the requested outcome and runs proportionate validation. For complex and domain work, the reviewer then looks for defects beyond test results. The orchestrator may send failed verification back to the coder for at most two remediation attempts. Substantive review findings allow one review remediation pass followed by verification. Unresolved verification failures are reported as failures. The user does not need to switch agents. Specialist output is a claim until checked: **FILESYSTEM STATE > AGENT CLAIM**.
 
-The orchestrator can read and search but cannot edit files or run shell commands. The coder can edit files and run builds and tests. The researcher and reviewer are read-only. Researcher web fetch is enabled; OpenCode's web search tool is available with an OpenCode or OpenCode Go provider, or when `OPENCODE_ENABLE_EXA=1` or `OPENCODE_ENABLE_PARALLEL=1` is set. Agent descriptions and permissions use OpenCode's documented Markdown format.
+The orchestrator can read and search but cannot edit files or run shell commands. The coder can edit files and run commands. The verifier can run commands but cannot edit. Explorer, planner, researcher, and reviewer can only read and search; researcher also has web tools. Researcher web fetch is enabled; OpenCode's web search tool is available with an OpenCode or OpenCode Go provider, or when `OPENCODE_ENABLE_EXA=1` or `OPENCODE_ENABLE_PARALLEL=1` is set. Agent descriptions and permissions use OpenCode's documented Markdown format.
 
 ## Recommendation design
 
 The bundled, versioned [`catalog/models.json`](catalog/models.json) keeps model metadata separate from selection logic. Entries include Ollama tags, storage and memory budgets, roles, context, tool support, speed/quality weights, and explanatory notes. The bundled catalogue works fully offline and can be updated independently in a future release.
 
 Machine detection is isolated in [`src/hardware.ts`](src/hardware.ts). Recommendation logic in [`src/models/recommend.ts`](src/models/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Recommended-memory figures include practical headroom beyond quantised model weight; minimum-memory values are used only by the explicitly quality-maximising preset.
+
+Models can serve several roles. Balanced and fast setups favor smaller models for exploration, verification, and research when memory permits; the minimal preset reuses one model for all seven agents. The saved selection records each assignment, and reinstall fills new roles from related assignments in older four-agent state files.
 
 The provider boundary is isolated in [`src/ollama.ts`](src/ollama.ts), allowing another OpenAI-compatible backend such as vLLM to be added without changing hardware or recommendation logic.
 

@@ -45,7 +45,7 @@ function showMachine(h: Awaited<ReturnType<typeof detectHardware>>, r: Recommend
 }
 function manualModel(name: string): Model {
   const tag = name.includes(":") ? name : `${name}:latest`;
-  return { id: `manual-${tag}`, name: tag, ollamaModel: tag, roles: ["orchestrator", "coding", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1, storageGB: 0, contextWindow: 32768, toolCalling: true, agenticCoding: true, speed: 1, quality: 1, notes: "Manually selected; compatibility and storage are unknown." };
+  return { id: `manual-${tag}`, name: tag, ollamaModel: tag, roles: ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1, storageGB: 0, contextWindow: 32768, toolCalling: true, agenticCoding: true, speed: 1, quality: 1, notes: "Manually selected; compatibility and storage are unknown." };
 }
 async function customise(base: Recommendation, models: Model[], h: Awaited<ReturnType<typeof detectHardware>>): Promise<Recommendation> {
   const assignments = { ...base.assignments };

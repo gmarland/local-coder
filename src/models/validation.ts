@@ -3,7 +3,7 @@ import type { Model } from "../types.js";
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-const modelRoles = new Set(["orchestrator", "coding", "research", "review"]);
+const modelRoles = new Set(["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"]);
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 

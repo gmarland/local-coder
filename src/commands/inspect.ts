@@ -19,7 +19,8 @@ export async function statusCommand(dest: string) {
   const state = JSON.parse(await readFile(statePath, "utf8")) as SavedState;
   const running = await ollamaRunning(); const installed = await installedModels();
   const configured = existsSync(path.join(dest, "opencode.json")) || existsSync(path.join(dest, "opencode.jsonc"));
-  console.log(`Local AI setup\n\nOllama       ${running ? "running" : "not running"}\nOpenCode     ${configured ? "configured" : "missing"}\n\n${roles.map(r => `${r.padEnd(13)}${state.roles[r]}`).join("\n")}\n\nModels installed: ${installed.length}\nEstimated selection size: ${state.storageGB} GB\nConfig: ${dest}`);
+  const savedRoles = state.roles as Partial<Record<(typeof roles)[number], string>>;
+  console.log(`Local AI setup\n\nOllama       ${running ? "running" : "not running"}\nOpenCode     ${configured ? "configured" : "missing"}\n\n${roles.map(r => `${r.padEnd(13)}${savedRoles[r] ?? "not assigned (legacy setup)"}`).join("\n")}\n\nModels installed: ${installed.length}\nEstimated selection size: ${state.storageGB} GB\nConfig: ${dest}`);
 }
 export async function modelsCommand(models: Model[], h: Awaited<ReturnType<typeof detectHardware>>) {
   const installed = new Set(await installedModels());

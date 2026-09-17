@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadCatalogue } from "../src/models/catalogue.js";
 import { classifyHardware, recommend, withCustomAssignments } from "../src/models/recommend.js";
-import type { HardwareInfo, Preset } from "../src/types.js";
+import { roles, type HardwareInfo, type Preset } from "../src/types.js";
 
 const machine = (memory: number, disk = 500, gpuVramGB?: number): HardwareInfo => ({
   platform: "darwin", osName: "macOS", architecture: "arm64", cpu: "Apple", appleSilicon: "Apple M4",
@@ -36,7 +36,25 @@ test("all presets produce fitting, tool-capable selections", async () => {
       assert.ok(selected.minimumMemoryGB <= 32);
     }
     if (preset === "minimal") assert.equal(result.uniqueModels.length, 1);
+    assert.deepEqual(Object.keys(result.assignments), [...roles]);
   }
+});
+
+test("lightweight roles favor a smaller model while core roles use stronger models", async () => {
+  const { models } = await loadCatalogue();
+  const result = recommend(models, machine(64), "balanced");
+  assert.ok(result.assignments.explorer.recommendedMemoryGB <= result.assignments.coder.recommendedMemoryGB);
+  assert.ok(result.assignments.verifier.recommendedMemoryGB <= result.assignments.planner.recommendedMemoryGB);
+  assert.equal(new Set(result.uniqueModels.map(model => model.ollamaModel)).size, result.uniqueModels.length);
+});
+
+test("older catalogues still support the added roles through related capabilities", async () => {
+  const { models } = await loadCatalogue();
+  const old = models.map(model => ({ ...model, roles: model.roles.filter(role => !["exploration", "planning", "verification"].includes(role)) }));
+  const result = recommend(old, machine(32));
+  assert.ok(result.assignments.explorer.roles.includes("research"));
+  assert.ok(result.assignments.planner.roles.includes("orchestrator"));
+  assert.ok(result.assignments.verifier.roles.includes("research"));
 });
 
 test("very high tier may use an independent reviewer", async () => {
@@ -55,7 +73,7 @@ test("custom role choices are deduplicated for storage", async () => {
   const { models } = await loadCatalogue();
   const base = recommend(models, machine(64));
   const small = models[0];
-  const custom = withCustomAssignments(base, { orchestrator: small, coder: small, researcher: small, reviewer: small }, machine(64));
+  const custom = withCustomAssignments(base, Object.fromEntries(roles.map(role => [role, small])) as typeof base.assignments, machine(64));
   assert.equal(custom.uniqueModels.length, 1);
   assert.equal(custom.storageGB, small.storageGB);
 });
@@ -66,7 +84,7 @@ test("recommendations deduplicate by Ollama tag and refresh custom disk warnings
   const base = recommend([models[0], duplicate], machine(16, 30));
   assert.equal(base.uniqueModels.length, 1);
   const larger = { ...models[0], id: "manual-large", ollamaModel: "manual:large", storageGB: 28 };
-  const custom = withCustomAssignments(base, { orchestrator: larger, coder: larger, researcher: larger, reviewer: larger }, machine(16, 30));
+  const custom = withCustomAssignments(base, Object.fromEntries(roles.map(role => [role, larger])) as typeof base.assignments, machine(16, 30));
   assert.equal(custom.uniqueModels.length, 1);
   assert.equal(custom.storageGB, 28);
   assert.match(custom.warnings.join(" "), /Models need 28 GB/);

@@ -16,7 +16,7 @@ interface CleanupAction {
 }
 export interface CleanupPlan { destination: string; actions: CleanupAction[]; preview: CleanupResult }
 const ownershipName = "local-coder-ownership.json";
-const managedPaths = new Set(["opencode.json", "opencode.jsonc", "AGENTS.md", "local-coder-state.json", "agents/orchestrator.md", "agents/coder.md", "agents/researcher.md", "agents/reviewer.md"]);
+const managedPaths = new Set(["opencode.json", "opencode.jsonc", "AGENTS.md", "local-coder-state.json", "agents/orchestrator.md", "agents/explorer.md", "agents/planner.md", "agents/coder.md", "agents/verifier.md", "agents/researcher.md", "agents/reviewer.md"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const ownPath = (destination: string) => path.join(destination, ownershipName);
 async function isSymlink(file: string): Promise<boolean> {

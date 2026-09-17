@@ -9,7 +9,7 @@ interface SavedStateData {
   configuredAt: string;
   preset: Preset;
   tier: CapabilityTier;
-  roles: Record<Role, string>;
+  roles: Record<"orchestrator" | "coder" | "researcher" | "reviewer", string> & Partial<Record<Role, string>>;
   storageGB?: unknown;
   assignments?: unknown;
 }
@@ -22,12 +22,13 @@ function isSavedState(value: unknown): value is SavedStateData {
       !nonempty(value.configuredAt) || !presets.has(value.preset as Preset) || !tiers.has(value.tier as CapabilityTier) ||
       !isRecord(value.roles)) return false;
   const assignedRoles = value.roles;
-  return roles.every(role => nonempty(assignedRoles[role]));
+  return (["orchestrator", "coder", "researcher", "reviewer"] as const).every(role => nonempty(assignedRoles[role])) &&
+    roles.every(role => assignedRoles[role] === undefined || nonempty(assignedRoles[role]));
 }
 
 function fallbackModel(ollamaModel: string): Model {
   return { id: `restored-${ollamaModel}`, name: ollamaModel, ollamaModel,
-    roles: ["orchestrator", "coding", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1,
+    roles: ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1,
     storageGB: 0, contextWindow: 32768, toolCalling: true, agenticCoding: true, speed: 1, quality: 1,
     notes: "Restored from saved local-coder state." };
 }
@@ -43,9 +44,12 @@ export async function readSavedRecommendation(destination: string, catalogueMode
     throw new Error(`Saved setup state is invalid at ${statePath}; run local-coder setup to choose a configuration.`);
   const state = value;
   const assignments = {} as Record<Role, Model>;
+  const legacySource: Partial<Record<Role, Role>> = { explorer: "researcher", planner: "orchestrator", verifier: "researcher" };
   for (const role of roles) {
-    const tag = state.roles[role];
-    const snapshot = state.version === 2 && isRecord(state.assignments) ? state.assignments[role] : undefined;
+    const source = state.roles[role] ? role : legacySource[role];
+    const tag = source ? state.roles[source] : undefined;
+    if (!tag) throw new Error(`Saved setup state is invalid at ${statePath}; run local-coder setup to choose a configuration.`);
+    const snapshot = state.version === 2 && isRecord(state.assignments) ? state.assignments[source!] : undefined;
     assignments[role] = isModel(snapshot) && snapshot.ollamaModel === tag
       ? snapshot
       : catalogueModels.find(model => model.ollamaModel === tag) ?? fallbackModel(tag);

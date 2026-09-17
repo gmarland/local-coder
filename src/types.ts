@@ -1,6 +1,6 @@
-export const roles = ["orchestrator", "coder", "researcher", "reviewer"] as const;
+export const roles = ["orchestrator", "explorer", "planner", "coder", "verifier", "researcher", "reviewer"] as const;
 export type Role = (typeof roles)[number];
-export type ModelRole = "orchestrator" | "coding" | "research" | "review";
+export type ModelRole = "orchestrator" | "exploration" | "planning" | "coding" | "verification" | "research" | "review";
 export type Preset = "balanced" | "quality" | "fast" | "minimal";
 export type CapabilityTier = "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 
@@ -25,7 +25,10 @@ interface SavedStateBase {
   configuredAt: string; preset: Preset; tier: CapabilityTier;
   roles: Record<Role, string>; storageGB: number;
 }
-export interface SavedStateV1 extends SavedStateBase { version: 1 }
+export interface SavedStateV1 extends Omit<SavedStateBase, "roles"> {
+  version: 1;
+  roles: Record<"orchestrator" | "coder" | "researcher" | "reviewer", string>;
+}
 export interface SavedStateV2 extends SavedStateBase {
   version: 2;
   assignments: Record<Role, Model>;

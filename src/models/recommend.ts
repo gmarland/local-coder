@@ -10,10 +10,16 @@ export function classifyHardware(h: HardwareInfo): CapabilityTier {
   if (memory < 72) return "HIGH";
   return "VERY_HIGH";
 }
-const roleMap: Record<Role, ModelRole> = { orchestrator: "orchestrator", coder: "coding", researcher: "research", reviewer: "review" };
+const roleMap: Record<Role, ModelRole> = {
+  orchestrator: "orchestrator", explorer: "exploration", planner: "planning", coder: "coding",
+  verifier: "verification", researcher: "research", reviewer: "review"
+};
+const legacyCapability: Partial<Record<Role, ModelRole>> = { explorer: "research", planner: "orchestrator", verifier: "research" };
 export function compatibleModels(models: Model[], h: HardwareInfo, role: Role): Model[] {
   const memory = effectiveMemoryGB(h);
-  return models.filter(m => m.roles.includes(roleMap[role]) && m.minimumMemoryGB <= memory && m.storageGB + 5 <= h.diskAvailableGB);
+  const capability = models.some(m => m.roles.includes(roleMap[role]))
+    ? roleMap[role] : legacyCapability[role] ?? roleMap[role];
+  return models.filter(m => m.roles.includes(capability) && m.minimumMemoryGB <= memory && m.storageGB + 5 <= h.diskAvailableGB);
 }
 export function summarizeAssignments(assignments: Record<Role, Model>): Pick<Recommendation, "uniqueModels" | "storageGB"> {
   const uniqueModels = [...new Map(roles.map(role => [assignments[role].ollamaModel, assignments[role]])).values()];
@@ -27,6 +33,10 @@ function warningsFor(h: HardwareInfo, storageGB: number): string[] {
 }
 function score(model: Model, preset: Preset, role: Role): number {
   const roleBonus = role === "coder" && model.roles.includes("coding") ? 2 : 0;
+  const lightweight = role === "explorer" || role === "verifier" || role === "researcher";
+  if (lightweight) return preset === "quality"
+    ? model.speed * 2 + model.quality * 2 - model.recommendedMemoryGB / 3
+    : model.speed * 3 + model.quality - model.recommendedMemoryGB / 2;
   if (preset === "fast") return model.speed * 3 + model.quality + roleBonus - model.recommendedMemoryGB / 8;
   if (preset === "quality") return model.quality * 4 + model.speed + roleBonus;
   return model.quality * 2 + model.speed + roleBonus - model.recommendedMemoryGB / 16;

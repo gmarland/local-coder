@@ -14,7 +14,7 @@ import { contextModelTag, withContextModels } from "../src/opencode/context-mode
 import { probeOpenCodeEditing, runOpenCode } from "../src/opencode/probe.js";
 import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../src/opencode/state.js";
 import { launchCommand } from "../src/commands/setup.js";
-import type { HardwareInfo } from "../src/types.js";
+import { roles, type HardwareInfo } from "../src/types.js";
 
 const hardware: HardwareInfo = { platform: "darwin", osName: "macOS", architecture: "arm64", cpu: "M4", totalMemoryGB: 64,
   availableMemoryGB: 48, diskAvailableGB: 500, commands: { ollama: true, opencode: true, git: true, rg: true } };
@@ -49,20 +49,27 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   const setup = recommend((await loadCatalogue()).models, hardware);
   const orchestrator = generateAgent("orchestrator", setup);
   assert.match(orchestrator, /coder: allow/);
+  assert.match(orchestrator, /explorer: allow/);
+  assert.match(orchestrator, /planner: allow/);
+  assert.match(orchestrator, /verifier: allow/);
   assert.match(orchestrator, /researcher: allow/);
   assert.match(orchestrator, /reviewer: allow/);
   assert.match(orchestrator, /mode: primary/);
   assert.match(orchestrator, /edit: deny/);
   assert.match(orchestrator, /bash: deny/);
-  assert.match(orchestrator, /CALL that agent with the task tool/);
-  assert.match(orchestrator, /call task with subagent_type coder/);
-  assert.match(orchestrator, /call task with subagent_type researcher/);
-  assert.match(orchestrator, /call task with subagent_type reviewer/);
-  assert.match(orchestrator, /relevant user request.*constraints.*relevant research.*expected outcome/);
+  assert.match(orchestrator, /CALL the agent with the task tool yourself/);
+  assert.match(orchestrator, /TRIVIAL:.*coder → verifier/);
+  assert.match(orchestrator, /STANDARD:.*explorer → coder → verifier/);
+  assert.match(orchestrator, /COMPLEX:.*explorer → planner → coder → verifier → reviewer/);
+  assert.match(orchestrator, /DOMAIN:.*explorer and researcher → planner → coder → verifier → reviewer/);
+  assert.match(orchestrator, /Do not invoke explorer, planner, researcher, or reviewer merely because they exist/);
+  assert.match(orchestrator, /OBJECTIVE, PLAN.*RELEVANT REPOSITORY CONTEXT.*DOMAIN\/RESEARCH CONTEXT.*CONSTRAINTS, EXPECTED VALIDATION/);
   assert.match(orchestrator, /Never reply "use the coder"/);
-  assert.match(orchestrator, /Independently read or search the repository/);
-  assert.match(orchestrator, /call coder again ONCE/);
-  assert.match(orchestrator, /Never report completion solely from coder's words/);
+  assert.match(orchestrator, /Independently read or search affected files/);
+  assert.match(orchestrator, /at most TWO coder remediation attempts/);
+  assert.match(orchestrator, /Never report success after unresolved verifier failure/);
+  assert.match(orchestrator, /ONE coder review remediation pass/);
+  assert.match(orchestrator, /Never report success after unresolved verifier failure or solely from coder's words/);
   assert.match(orchestrator, /Pass exactly three arguments: subagent_type, description, and prompt/);
   assert.match(orchestrator, /Never include task_id or any other argument/);
 });
@@ -82,13 +89,23 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(coder, /STATUS: SUCCESS or FAILURE/);
   assert.match(coder, /If no editing tool is available or it fails, return STATUS: FAILURE/);
   assert.match(coder, /read tool cannot write a file/);
-  for (const role of ["researcher", "reviewer"] as const) {
+  for (const role of ["explorer", "planner", "researcher", "reviewer"] as const) {
     const agent = generateAgent(role, setup);
     assert.match(agent, /mode: subagent/);
     assert.match(agent, /edit: deny/);
     assert.match(agent, /bash: deny/);
     assert.match(agent, /task: deny/);
   }
+  const verifier = generateAgent("verifier", setup);
+  assert.match(verifier, /mode: subagent/);
+  assert.match(verifier, /read:\n    "\*": allow/);
+  assert.match(verifier, /glob: allow\n  grep: allow\n  list: allow/);
+  assert.match(verifier, /bash: allow/);
+  assert.match(verifier, /edit: deny/);
+  assert.match(verifier, /task: deny/);
+  assert.match(verifier, /STATUS: PASS or FAIL/);
+  assert.match(generateAgent("explorer", setup), /RELEVANT FILES[\s\S]*EXECUTION FLOW[\s\S]*RISKS/);
+  assert.match(generateAgent("planner", setup), /PLAN[\s\S]*VALIDATION[\s\S]*ASSUMPTIONS/);
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
 });
 
@@ -170,12 +187,14 @@ test("installation backs up and merges existing configuration and agents", async
   const config = JSON.parse(await readFile(result.configPath, "utf8"));
   assert.deepEqual(config.plugin, ["kept"]);
   assert.equal(config.default_agent, "orchestrator");
-  for (const role of ["orchestrator", "coder", "researcher", "reviewer"])
+  for (const role of roles)
     assert.match(await readFile(path.join(destination, "agents", `${role}.md`), "utf8"), new RegExp(`model: ollama/`));
+  assert.equal((await readdir(path.join(destination, "agents"))).filter(name => name.endsWith(".md")).length, 7);
   assert.ok((await readdir(path.join(destination, "agents"))).some(name => name.startsWith("coder.md.backup-")));
   const state = JSON.parse(await readFile(path.join(destination, "local-coder-state.json"), "utf8"));
   assert.equal(state.version, 2);
   assert.equal(state.assignments.coder.ollamaModel, state.roles.coder);
+  for (const role of roles) assert.equal(state.assignments[role].ollamaModel, state.roles[role]);
 });
 
 test("installation overwrites generated files without creating backups by default", async () => {
@@ -242,6 +261,29 @@ test("legacy state restores catalogue and manual Ollama models", async () => {
   assert.equal(restored.assignments.orchestrator.ollamaModel, known);
   assert.equal(restored.assignments.coder.ollamaModel, "private-code-model:latest");
   assert.equal(restored.assignments.coder.contextWindow, 32768);
+  assert.equal(restored.assignments.explorer.ollamaModel, known);
+  assert.equal(restored.assignments.planner.ollamaModel, known);
+  assert.equal(restored.assignments.verifier.ollamaModel, known);
+});
+
+test("legacy version 2 snapshots supply models for newly added roles", async () => {
+  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-old-v2-"));
+  const catalogue = await loadCatalogue();
+  const general = catalogue.models[0];
+  const coding = catalogue.models[1];
+  const legacyRoles = { orchestrator: general.ollamaModel, coder: coding.ollamaModel,
+    researcher: general.ollamaModel, reviewer: coding.ollamaModel };
+  const assignments = { orchestrator: general, coder: coding, researcher: general, reviewer: coding };
+  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+    version: 2, configuredAt: new Date().toISOString(), preset: "balanced", tier: "HIGH",
+    roles: legacyRoles, assignments, storageGB: general.storageGB + coding.storageGB
+  }));
+  const restored = await readSavedRecommendation(destination, catalogue.models);
+  assert.deepEqual(restored.assignments.explorer, general);
+  assert.deepEqual(restored.assignments.planner, general);
+  assert.deepEqual(restored.assignments.verifier, general);
+  const plan = await planInstallation(destination, restored);
+  for (const role of roles) assert.ok(plan.files.some(file => file.path.endsWith(`agents/${role}.md`)));
 });
 
 test("reinstall mode backs up and replaces an invalid OpenCode config", async () => {
