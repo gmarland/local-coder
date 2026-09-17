@@ -6,7 +6,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { applyCleanupPlan, cleanupFiles, planCleanupFiles, recordWrite } from "../src/persistence/ownership.js";
-import { finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "../src/persistence/registry.js";
+import { discardModelTracking, finishUninstall, modelsToDelete, readRegistry, recordPulled, recordPullIntent, setSelected } from "../src/persistence/registry.js";
 import { installConfiguration } from "../src/opencode/config.js";
 import { loadCatalogue } from "../src/models/catalogue.js";
 import { recommend } from "../src/models/recommend.js";
@@ -116,6 +116,19 @@ test("pull intent survives interruption before a digest can be recorded", async 
   const registry = await readRegistry(file);
   assert.equal(registry.managed["candidate:latest"], "");
   assert.deepEqual(modelsToDelete(registry, "scope").remove, ["candidate:latest"]);
+});
+
+test("discarding a failed setup variant preserves the selection that preceded it", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-discard-"));
+  const file = path.join(dir, "registry.json");
+  await setSelected("scope", ["base:latest"], file);
+  await recordPulled("scope", "base:latest", "base-digest", file);
+  await recordPulled("scope", "local-coder-context:latest", "variant-digest", file);
+  await discardModelTracking("scope", ["local-coder-context:latest"], file);
+  const registry = await readRegistry(file);
+  assert.deepEqual(registry.scopes.scope.selected, ["base:latest"]);
+  assert.deepEqual(registry.scopes.scope.pulled, ["base:latest"]);
+  assert.deepEqual(registry.managed, { "base:latest": "base-digest" });
 });
 
 test("CLI previews and uninstalls a project-local setup", async () => {

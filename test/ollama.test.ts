@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deleteModel, installedModelDigests, modelAdvertisesTools, probeDelegation, probeRepositoryEditing, probeToolCalling, testModel } from "../src/ollama.js";
+import { createContextModel, deleteModel, installedModelDigests, loadedModelContext, modelAdvertisesTools, probeDelegation, probeRepositoryEditing, probeToolCalling, testModel } from "../src/ollama.js";
 
 const jsonResponse = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status,
@@ -49,6 +49,7 @@ test("delegation probe requires a structured task call selecting coder", async (
     assert.match(String(input), /\/v1\/chat\/completions$/);
     const body = JSON.parse(String(init?.body));
     assert.equal(body.tools[0].function.name, "task");
+    assert.ok(body.tools[0].function.parameters.properties.task_id);
     assert.match(body.messages[1].content, /Update the README/);
     return jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
       name: "task", arguments: JSON.stringify({ subagent_type: "coder", description: "Edit README", prompt: "Update the README installation instructions." })
@@ -60,6 +61,30 @@ test("delegation probe requires a structured task call selecting coder", async (
   assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
     name: "task", arguments: { subagent_type: "researcher", description: "Research", prompt: "Look up README syntax" }
   } }] } }] })), { ok: false, reason: "wrong-arguments" });
+  assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+    name: "task", arguments: { subagent_type: "coder", description: "Edit README", prompt: "Update README", task_id: "1" }
+  } }] } }] })), { ok: false, reason: "wrong-arguments" });
+});
+
+test("loaded context reports Ollama's allocation, not model metadata", async () => {
+  const request = (input: string | URL | Request) => {
+    assert.match(String(input), /\/api\/ps$/);
+    return jsonResponse({ models: [{ name: "another:latest", context_length: 32768 }, { name: "test-model", context_length: 4096 }] });
+  };
+  assert.equal(await loadedModelContext("test-model", request), 4096);
+  assert.equal(await loadedModelContext("missing", request), undefined);
+  assert.equal(await loadedModelContext("test-model", () => jsonResponse({ models: [{ name: "test-model", context_length: "32768" }] })), undefined);
+});
+
+test("context variant creation sets num_ctx without changing the source model", async () => {
+  await createContextModel("qwen3:8b", "local-coder-test:ctx32768", 32768, (input, init) => {
+    assert.match(String(input), /\/api\/create$/);
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      from: "qwen3:8b", model: "local-coder-test:ctx32768", parameters: { num_ctx: 32768 }, stream: false
+    });
+    return jsonResponse({ status: "success" });
+  });
+  await assert.rejects(createContextModel("qwen3:8b", "alias", 32768, () => jsonResponse({ error: "bad model" }, 400)), /HTTP 400/);
 });
 
 test("coder probe executes tools and checks the temporary file independently", async () => {

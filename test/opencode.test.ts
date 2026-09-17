@@ -10,6 +10,8 @@ import { recommend } from "../src/models/recommend.js";
 import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
 import { generateAgent } from "../src/opencode/agents.js";
+import { contextModelTag, withContextModels } from "../src/opencode/context-models.js";
+import { checkOpenCodeStateAccess, probeOpenCodeEditing } from "../src/opencode/probe.js";
 import { launchCommand } from "../src/commands/setup.js";
 import type { HardwareInfo } from "../src/types.js";
 
@@ -25,6 +27,21 @@ test("configuration generation preserves unrelated settings and providers", asyn
   assert.ok((generated.provider as Record<string, unknown>).ollama);
   assert.deepEqual(generated.instructions, ["RULES.md", "AGENTS.md"]);
   assert.equal(generated.default_agent, "orchestrator");
+  const ollama = (generated.provider as { ollama: { models: Record<string, { limit: { context: number; output: number } }> } }).ollama;
+  assert.deepEqual(ollama.models[setup.assignments.coder.ollamaModel].limit, { context: 32768, output: 8192 });
+});
+
+test("context variants keep role assignments consistent and advertise their actual target", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const configured = withContextModels(setup);
+  const source = setup.assignments.coder;
+  assert.equal(configured.assignments.coder.ollamaModel, contextModelTag(source));
+  assert.equal(configured.assignments.coder.contextWindow, 32768);
+  assert.equal(configured.uniqueModels.length, setup.uniqueModels.length);
+  assert.equal(setup.assignments.coder.ollamaModel, source.ollamaModel);
+  const config = generateConfig({}, configured);
+  const models = (config.provider as { ollama: { models: Record<string, { limit: { context: number } }> } }).ollama.models;
+  assert.equal(models[contextModelTag(source)].limit.context, 32768);
 });
 
 test("orchestrator delegates repository changes and cannot edit or run commands", async () => {
@@ -45,6 +62,7 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /Independently read or search the repository/);
   assert.match(orchestrator, /call coder again ONCE/);
   assert.match(orchestrator, /Never report completion solely from coder's words/);
+  assert.match(orchestrator, /Omit task_id for a new task/);
 });
 
 test("specialists have the intended edit, shell, and web permissions", async () => {
@@ -61,6 +79,7 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(coder, /NEVER claim that a file was modified unless/);
   assert.match(coder, /STATUS: SUCCESS or FAILURE/);
   assert.match(coder, /If no editing tool is available or it fails, return STATUS: FAILURE/);
+  assert.match(coder, /read tool cannot write a file/);
   for (const role of ["researcher", "reviewer"] as const) {
     const agent = generateAgent(role, setup);
     assert.match(agent, /mode: subagent/);
@@ -69,6 +88,35 @@ test("specialists have the intended edit, shell, and web permissions", async () 
     assert.match(agent, /task: deny/);
   }
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
+});
+
+test("real OpenCode probe requires a filesystem edit, even when the command succeeds", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const run = async (command: string, args: string[]) => {
+    assert.equal(command, "opencode");
+    assert.ok(args.includes("--pure"));
+    const project = args[args.indexOf("--dir") + 1];
+    assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
+    assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
+    return { stdout: '{"type":"text","part":{"text":"Done"}}\n' };
+  };
+  const writable = async () => ({ ok: true });
+  assert.deepEqual(await probeOpenCodeEditing(setup, run, writable), { ok: false, reason: "OpenCode did not create the file" });
+  const edited = await probeOpenCodeEditing(setup, async (command, args) => {
+    const project = args[args.indexOf("--dir") + 1];
+    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK\n");
+    return { stdout: "" };
+  }, writable);
+  assert.deepEqual(edited, { ok: true });
+});
+
+test("OpenCode state preflight reports an unwritable state directory", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-state-"));
+  const file = path.join(root, "not-a-directory");
+  await writeFile(file, "blocked");
+  const result = await checkOpenCodeStateAccess(root, file);
+  assert.equal(result.ok, false);
+  assert.match(result.reason!, /OpenCode cannot write/);
 });
 
 test("launch command targets the repository root when run from bin", async () => {

@@ -44,6 +44,13 @@ export async function pullModel(model: Model): Promise<void> {
     child.on("exit", code => code === 0 ? resolve() : reject(new Error(`ollama pull exited with ${code}`)));
   });
 }
+export async function createContextModel(source: string, alias: string, context: number, request: FetchLike = fetch): Promise<void> {
+  const r = await request(`${endpoint}/api/create`, { method: "POST", headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(120000), body: JSON.stringify({ from: source, model: alias, parameters: { num_ctx: context }, stream: false }) });
+  if (!r.ok) throw new Error(`Ollama could not create ${alias} from ${source}: HTTP ${r.status}`);
+  const value = await r.json() as { status?: string; error?: string };
+  if (value.status !== "success") throw new Error(`Ollama could not create ${alias}: ${value.error || value.status || "unknown response"}`);
+}
 export async function testModel(model: string, request: FetchLike = fetch): Promise<boolean> {
   try {
     const r = await request(`${endpoint}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
@@ -60,6 +67,16 @@ export async function modelAdvertisesTools(model: string, request: FetchLike = f
     const value = await r.json() as { capabilities?: string[] };
     return value.capabilities?.includes("tools") ?? false;
   } catch { return false; }
+}
+
+export async function loadedModelContext(model: string, request: FetchLike = fetch): Promise<number | undefined> {
+  try {
+    const r = await request(`${endpoint}/api/ps`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return undefined;
+    const value = await r.json() as { models?: { name?: string; model?: string; context_length?: number }[] };
+    const loaded = value.models?.find(item => item.name === model || item.model === model);
+    return loaded && Number.isSafeInteger(loaded.context_length) && loaded.context_length! > 0 ? loaded.context_length : undefined;
+  } catch { return undefined; }
 }
 
 export async function probeToolCalling(model: string, request: FetchLike = fetch): Promise<ToolCallProbe> {
@@ -119,7 +136,8 @@ export async function probeDelegation(model: string, request: FetchLike = fetch)
           name: "task", description: "Launch a specialist agent to perform a task.",
           parameters: { type: "object", properties: {
             subagent_type: { type: "string", enum: ["coder", "researcher", "reviewer"] },
-            description: { type: "string" }, prompt: { type: "string" }
+            description: { type: "string" }, prompt: { type: "string" },
+            task_id: { type: "string", description: "Only for resuming a prior task with a real ses... session ID. Omit for a new task." }
           }, required: ["subagent_type", "description", "prompt"] }
         } }]
       })
@@ -136,7 +154,7 @@ export async function probeDelegation(model: string, request: FetchLike = fetch)
     }
     if (!args || typeof args !== "object" || Array.isArray(args)) return { ok: false, reason: "wrong-arguments" };
     const task = args as Record<string, unknown>;
-    if (task.subagent_type !== "coder" || typeof task.prompt !== "string" || !task.prompt.trim() ||
+    if (task.task_id !== undefined || task.subagent_type !== "coder" || typeof task.prompt !== "string" || !task.prompt.trim() ||
         typeof task.description !== "string" || !task.description.trim())
       return { ok: false, reason: "wrong-arguments" };
     return { ok: true };

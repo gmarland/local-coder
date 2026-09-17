@@ -6,6 +6,8 @@ import { generateAgent, generalInstructions } from "./agents.js";
 import { roles, type Recommendation, type Role, type SavedState } from "../types.js";
 import { writeManagedFile } from "../persistence/ownership.js";
 
+export const configuredContext = (model: { contextWindow: number }) => Math.min(model.contextWindow, 32768);
+
 export interface InstallResult { configPath: string; backupPath?: string; created: string[]; recoveredInvalidConfig?: boolean }
 export interface InstallOptions { recoverInvalidConfig?: boolean; backupExisting?: boolean }
 export interface InstallationPlan {
@@ -19,7 +21,7 @@ export function generateConfig(existing: Record<string, unknown>, recommendation
   const existingProviders = typeof existing.provider === "object" && existing.provider ? existing.provider as Record<string, unknown> : {};
   const previousOllama = typeof existingProviders.ollama === "object" && existingProviders.ollama ? existingProviders.ollama as Record<string, unknown> : {};
   const previousModels = typeof previousOllama.models === "object" && previousOllama.models ? previousOllama.models as Record<string, unknown> : {};
-  const models = Object.fromEntries(recommendation.uniqueModels.map(m => [m.ollamaModel, { name: `${m.name} (local)`, limit: { context: Math.min(m.contextWindow, 131072), output: 16384 } }]));
+  const models = Object.fromEntries(recommendation.uniqueModels.map(m => [m.ollamaModel, { name: `${m.name} (local)`, limit: { context: configuredContext(m), output: 8192 } }]));
   const priorInstructions = Array.isArray(existing.instructions) ? existing.instructions.filter(v => typeof v === "string") : [];
   return { ...existing, $schema: "https://opencode.ai/config.json", share: existing.share ?? "disabled", default_agent: "orchestrator",
     instructions: [...new Set([...priorInstructions, "AGENTS.md"])],

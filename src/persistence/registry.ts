@@ -61,6 +61,23 @@ export async function recordPullIntent(scope: string, model: string, file = regi
     registry.managed[model] ??= "";
   });
 }
+export async function discardModelTracking(scope: string, models: string[], file = registryPath()): Promise<void> {
+  const discarded = new Set(models);
+  await mutate(file, registry => {
+    const current = registry.scopes[scope];
+    if (current) {
+      current.selected = current.selected.filter(model => !discarded.has(model));
+      current.pulled = current.pulled.filter(model => !discarded.has(model));
+      current.used = current.used.filter(model => !discarded.has(model));
+      if (!current.selected.length && !current.pulled.length && !current.used.length) delete registry.scopes[scope];
+    }
+    for (const model of discarded) {
+      const referenced = Object.values(registry.scopes).some(data =>
+        [...data.selected, ...data.pulled, ...data.used].includes(model));
+      if (!referenced) delete registry.managed[model];
+    }
+  });
+}
 export function modelsToDelete(registry: Registry, scope: string): { remove: string[]; shared: string[] } {
   const remove: string[] = []; const shared: string[] = [];
   for (const model of Object.keys(registry.managed)) {

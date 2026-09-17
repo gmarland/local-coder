@@ -5,9 +5,11 @@ import { promisify } from "node:util";
 import * as p from "@clack/prompts";
 import { detectHardware } from "../hardware.js";
 import { compatibleModels, recommend, withCustomAssignments } from "../models/recommend.js";
-import { applyInstallationPlan, planInstallation, readExistingConfig } from "../opencode/config.js";
-import { installedModelDigests, installedModels, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeToolCalling, pullModel, testModel } from "../ollama.js";
-import { recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
+import { applyInstallationPlan, configuredContext, planInstallation, readExistingConfig } from "../opencode/config.js";
+import { contextModelTag, withContextModels } from "../opencode/context-models.js";
+import { checkOpenCodeStateAccess, probeOpenCodeEditing } from "../opencode/probe.js";
+import { createContextModel, deleteModel, installedModelDigests, installedModels, loadedModelContext, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeToolCalling, pullModel, testModel } from "../ollama.js";
+import { discardModelTracking, recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
 import { roles, type Model, type Preset, type Recommendation } from "../types.js";
 import { cancelled, showRecommendation, type Options } from "./common.js";
 
@@ -73,14 +75,15 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     if (action === "custom") { result = await customise(result, models, h); recommendationChanged = true; }
   }
   if (recommendationChanged) showRecommendation(result);
-  const plan = await planInstallation(dest, result);
+  const configured = withContextModels(result);
+  const plan = await planInstallation(dest, configured);
   const before = h.commands.ollama && await ollamaRunning() ? new Set(await installedModels()) : new Set<string>();
   const modelsToPull = result.uniqueModels.filter(m => !before.has(m.ollamaModel));
   const downloadGB = modelsToPull.reduce((sum, model) => sum + model.storageGB, 0);
   if (result.warnings.length) p.note(result.warnings.join("\n"), "Warnings");
   if (downloadGB + 5 > h.diskAvailableGB) throw new Error(`Insufficient disk space: keep at least 5 GB free after the ${downloadGB} GB model download. Choose smaller models or free disk space.`);
   const downloadPlan = options.noPull ? "Will not download models" : modelsToPull.length ? `Will download missing models:\n${modelsToPull.map(m => `  ${m.ollamaModel}  ~${m.storageGB || "?"} GB`).join("\n")}` : "All selected models are already installed";
-  p.note(`${downloadPlan}\n\nWill merge and write:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
+  p.note(`${downloadPlan}\n\nWill create local context variants (sharing the downloaded model weights):\n  ${result.uniqueModels.map(model => `${model.ollamaModel} → ${contextModelTag(model)} (${configuredContext(model)} tokens)`).join("\n  ")}\n\nWill merge and write:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
   if (options.dryRun) { p.outro("Dry run complete; no changes were made."); return; }
   const managedFiles = plan.files.map(file => file.path);
   let backupExisting = options.backup;
@@ -89,11 +92,19 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     cancelled(backup); backupExisting = backup === true;
   }
   if (!options.yes) { const proceed = await p.confirm({ message: "Proceed?", initialValue: false }); cancelled(proceed); if (!proceed) { p.cancel("No changes were made."); return; } }
-  await setSelected(dest, result.uniqueModels.map(model => model.ollamaModel));
   let running = await ollamaRunning();
   if (!h.commands.ollama) p.log.warn("Ollama is not installed. Install it, then rerun this command to download and validate models.");
   else if (!running) p.log.warn("Ollama is installed but not running. Start it, then run local-coder configure.");
   if (!h.commands.opencode) p.log.warn("OpenCode is not installed. Install it before attempting to launch the configured environment.");
+  if (!options.skipValidation && h.commands.opencode) {
+    const state = await checkOpenCodeStateAccess();
+    if (!state.ok) {
+      p.note(state.reason!, "OpenCode cannot run");
+      p.outro("No configuration changes were written. Repair the OpenCode state-directory ownership or permissions, then rerun local-coder.");
+      process.exitCode = 1;
+      return;
+    }
+  }
   if (!options.noPull && running) {
     const installed = new Set(await installedModels());
     for (const model of result.uniqueModels) if (!installed.has(model.ollamaModel)) {
@@ -107,39 +118,80 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     }
   }
   running = await ollamaRunning();
+  const createdContextModels = new Map<string, string>();
+  const cleanupFailedContextModels = async () => {
+    for (const alias of createdContextModels.keys()) {
+      try { await deleteModel(alias); p.log.info(`Removed failed setup's context variant ${alias}`); }
+      catch (error) { p.log.warn(`Could not remove failed setup's context variant ${alias}: ${error instanceof Error ? error.message : error}`); }
+    }
+    await discardModelTracking(dest, [...createdContextModels.keys()]);
+  };
+  if (running) {
+    const installed = new Set(await installedModels());
+    for (const model of result.uniqueModels) {
+      const alias = contextModelTag(model);
+      if (installed.has(alias) || !installed.has(model.ollamaModel)) continue;
+      p.log.step(`Creating ${alias} with ${configuredContext(model)} token context`);
+      try {
+        await createContextModel(model.ollamaModel, alias, configuredContext(model));
+        const digest = (await installedModelDigests()).get(alias) || "";
+        createdContextModels.set(alias, digest);
+        installed.add(alias);
+      } catch (error) {
+        await cleanupFailedContextModels();
+        throw error;
+      }
+    }
+  }
   const present = new Set(await installedModels());
   const runtimeChecks: string[] = [`Ollama: ${running ? "✓" : "not running"}`];
   let runtimeValid = running;
-  for (const model of result.uniqueModels) {
+  for (const model of configured.uniqueModels) {
     const exists = present.has(model.ollamaModel);
     runtimeChecks.push(`${model.name} installed: ${exists ? "✓" : "missing"}`);
     runtimeValid = runtimeValid && exists;
     if (!exists || options.skipValidation) continue;
     const responds = await testModel(model.ollamaModel);
+    const context = responds ? await loadedModelContext(model.ollamaModel) : undefined;
+    const required = configuredContext(model);
+    const contextValid = context !== undefined && context >= required;
     const advertised = await modelAdvertisesTools(model.ollamaModel);
-    const probe = responds && advertised ? await probeToolCalling(model.ollamaModel) : { ok: false, reason: "request-failed" as const };
+    const probe = responds && advertised && contextValid ? await probeToolCalling(model.ollamaModel) : { ok: false, reason: "request-failed" as const };
     runtimeChecks.push(`${model.name} responds: ${responds ? "✓" : "failed"}`);
+    runtimeChecks.push(`${model.name} Ollama context: ${context === undefined ? "unknown" : context} tokens; OpenCode requires ${required}: ${contextValid ? "✓" : "failed"}`);
     runtimeChecks.push(`${model.name} advertises tools: ${advertised ? "✓" : "failed"}`);
-    runtimeChecks.push(`${model.name} structured tool call: ${probe.ok ? "✓" : `failed (${probeFailure(probe.reason)})`}`);
-    runtimeValid = runtimeValid && responds && advertised && probe.ok;
+    if (contextValid) runtimeChecks.push(`${model.name} structured tool call: ${probe.ok ? "✓" : `failed (${probeFailure(probe.reason)})`}`);
+    runtimeValid = runtimeValid && responds && contextValid && advertised && probe.ok;
   }
-  if (!options.skipValidation && present.has(result.assignments.coder.ollamaModel) && runtimeValid) {
-    const editing = await probeRepositoryEditing(result.assignments.coder.ollamaModel);
+  if (!options.skipValidation && present.has(configured.assignments.coder.ollamaModel) && runtimeValid) {
+    const editing = await probeRepositoryEditing(configured.assignments.coder.ollamaModel);
     runtimeChecks.push(`Coder changes and re-reads a temporary file: ${editing.ok ? "✓" : `failed (${probeFailure(editing.reason)})`}`);
     runtimeValid = runtimeValid && editing.ok;
   }
-  if (!options.skipValidation && present.has(result.assignments.orchestrator.ollamaModel) && runtimeValid) {
-    const delegation = await probeDelegation(result.assignments.orchestrator.ollamaModel);
-    runtimeChecks.push(`Orchestrator selects coder via task: ${delegation.ok ? "✓" : `warning (${probeFailure(delegation.reason)})`}`);
-    if (!delegation.ok) p.log.warn("The orchestrator model passed structured tool calling but did not delegate a sample file edit to coder. Automatic delegation may be unreliable; consider another orchestrator model.");
+  if (!options.skipValidation && present.has(configured.assignments.orchestrator.ollamaModel) && runtimeValid) {
+    const delegation = await probeDelegation(configured.assignments.orchestrator.ollamaModel);
+    runtimeChecks.push(`Orchestrator selects coder via task: ${delegation.ok ? "✓" : `failed (${probeFailure(delegation.reason)})`}`);
+    runtimeValid = runtimeValid && delegation.ok;
+  }
+  if (!options.skipValidation && h.commands.opencode && runtimeValid && configured.uniqueModels.every(model => present.has(model.ollamaModel))) {
+    p.log.step("Testing a real OpenCode edit in a temporary project (this may take several minutes)");
+    const integration = await probeOpenCodeEditing(configured);
+    runtimeChecks.push(`OpenCode delegates and edits a temporary project: ${integration.ok ? "✓" : `failed (${integration.reason})`}`);
+    runtimeValid = runtimeValid && integration.ok;
   }
   if (options.skipValidation) p.log.warn("Model inference and structured tool-call validation were skipped. Tool execution has not been verified.");
-  if (running && result.uniqueModels.every(model => present.has(model.ollamaModel)) && !options.skipValidation && !runtimeValid) {
+  if (running && configured.uniqueModels.every(model => present.has(model.ollamaModel)) && !options.skipValidation && !runtimeValid) {
+    await cleanupFailedContextModels();
     p.note(runtimeChecks.join("\n"), "Validation failed");
-    p.outro("No configuration changes were written. Rerun local-coder, choose Customise, and select a model that passes structured tool-call validation.");
+    p.outro("No configuration changes were written. Choose a model that passes the OpenCode edit check, or increase Ollama's context allocation, then rerun local-coder.");
     process.exitCode = 1;
     return;
   }
+  for (const [alias, digest] of createdContextModels) {
+    await recordPullIntent(dest, alias);
+    await recordPulled(dest, alias, digest);
+  }
+  await setSelected(dest, configured.uniqueModels.map(model => model.ollamaModel));
   const install = await applyInstallationPlan(plan, { backupExisting });
   if (install.backupPath) p.log.info(`Backed up existing config to ${install.backupPath}`);
   let configValid = false;
