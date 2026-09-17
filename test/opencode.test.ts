@@ -11,7 +11,7 @@ import { applyInstallationPlan, generateConfig, installConfiguration, planInstal
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
 import { generateAgent } from "../src/opencode/agents.js";
 import { contextModelTag, withContextModels } from "../src/opencode/context-models.js";
-import { probeOpenCodeEditing } from "../src/opencode/probe.js";
+import { probeOpenCodeEditing, runOpenCode } from "../src/opencode/probe.js";
 import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../src/opencode/state.js";
 import { launchCommand } from "../src/commands/setup.js";
 import type { HardwareInfo } from "../src/types.js";
@@ -63,7 +63,8 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /Independently read or search the repository/);
   assert.match(orchestrator, /call coder again ONCE/);
   assert.match(orchestrator, /Never report completion solely from coder's words/);
-  assert.match(orchestrator, /Omit task_id for a new task/);
+  assert.match(orchestrator, /Pass exactly three arguments: subagent_type, description, and prompt/);
+  assert.match(orchestrator, /Never include task_id or any other argument/);
 });
 
 test("specialists have the intended edit, shell, and web permissions", async () => {
@@ -91,13 +92,22 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
 });
 
+test("headless OpenCode runner closes stdin", async () => {
+  const result = await runOpenCode(process.execPath,
+    ["-e", "process.stdin.resume(); process.stdin.on('end', () => process.stdout.write('closed'))"],
+    { timeout: 5000, maxBuffer: 1024, env: process.env });
+  assert.equal(result.stdout, "closed");
+});
+
 test("real OpenCode probe requires a filesystem edit, even when the command succeeds", async () => {
   const setup = recommend((await loadCatalogue()).models, hardware);
-  const run = async (command: string, args: string[]) => {
+  const run = async (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
     assert.equal(command, "opencode");
     assert.ok(args.includes("--print-logs"));
     assert.ok(!args.includes("--pure"));
+    assert.equal(options.env.OPENCODE_DISABLE_MODELS_FETCH, "1");
     const project = args[args.indexOf("--dir") + 1];
+    assert.equal(options.env.npm_config_cache, path.join(project, ".npm-cache"));
     assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
     assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
     return { stdout: '{"type":"text","part":{"text":"Done"}}\n' };

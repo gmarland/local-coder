@@ -18,7 +18,8 @@ const execFileAsync = promisify(execFile);
 async function agentsDiscoverable(destination: string): Promise<boolean> {
   try {
     const cwd = path.basename(destination) === ".opencode" ? path.dirname(destination) : process.cwd();
-    const { stdout } = await execFileAsync("opencode", ["agent", "list"], { cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
+    const { stdout } = await execFileAsync("opencode", ["agent", "list"], { cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+      env: { ...process.env, OPENCODE_DISABLE_MODELS_FETCH: "1" } });
     return roles.every(role => new RegExp(`(^|\\n)${role} \\(`).test(stdout));
   } catch { return false; }
 }
