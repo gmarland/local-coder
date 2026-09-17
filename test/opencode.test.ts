@@ -95,7 +95,8 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
   const setup = recommend((await loadCatalogue()).models, hardware);
   const run = async (command: string, args: string[]) => {
     assert.equal(command, "opencode");
-    assert.ok(args.includes("--pure"));
+    assert.ok(args.includes("--print-logs"));
+    assert.ok(!args.includes("--pure"));
     const project = args[args.indexOf("--dir") + 1];
     assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
     assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
@@ -109,6 +110,15 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     return { stdout: "" };
   }, writable);
   assert.deepEqual(edited, { ok: true });
+});
+
+test("real OpenCode probe reports the command status and OpenCode stderr", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const writable = async () => ({ ok: true });
+  const failed = await probeOpenCodeEditing(setup, async () => {
+    throw Object.assign(new Error("Command failed"), { code: 1, stderr: "provider module could not load" });
+  }, writable);
+  assert.deepEqual(failed, { ok: false, reason: "OpenCode exited with status 1: provider module could not load" });
 });
 
 test("OpenCode state preflight reports an unwritable state directory", async () => {
