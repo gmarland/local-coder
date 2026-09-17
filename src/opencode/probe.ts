@@ -1,30 +1,17 @@
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Recommendation } from "../types.js";
 import { planInstallation } from "./config.js";
+import { checkOpenCodeStateAccess, type StateAccess } from "./state.js";
 
 const execFileAsync = promisify(execFile);
 type RunOpenCode = (command: string, args: string[], options: { timeout: number; maxBuffer: number }) => Promise<{ stdout: string }>;
-type CheckState = () => Promise<OpenCodeProbe>;
+type CheckState = () => Promise<StateAccess>;
 
 export interface OpenCodeProbe { ok: boolean; reason?: string }
-
-export async function checkOpenCodeStateAccess(home = process.env.HOME, stateHome = process.env.XDG_STATE_HOME): Promise<OpenCodeProbe> {
-  if (!home && !stateHome) return { ok: false, reason: "HOME or XDG_STATE_HOME is not set" };
-  const directory = path.join(stateHome || path.join(home!, ".local", "state"), "opencode");
-  try {
-    await mkdir(directory, { recursive: true });
-    await access(directory, constants.W_OK | constants.X_OK);
-    return { ok: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, reason: `OpenCode cannot write ${directory}: ${message}` };
-  }
-}
 
 function toolError(output: string): string | undefined {
   for (const line of output.split("\n")) {

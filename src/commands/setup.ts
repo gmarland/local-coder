@@ -7,7 +7,8 @@ import { detectHardware } from "../hardware.js";
 import { compatibleModels, recommend, withCustomAssignments } from "../models/recommend.js";
 import { applyInstallationPlan, configuredContext, planInstallation, readExistingConfig } from "../opencode/config.js";
 import { contextModelTag, withContextModels } from "../opencode/context-models.js";
-import { checkOpenCodeStateAccess, probeOpenCodeEditing } from "../opencode/probe.js";
+import { probeOpenCodeEditing } from "../opencode/probe.js";
+import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../opencode/state.js";
 import { createContextModel, deleteModel, installedModelDigests, installedModels, loadedModelContext, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeToolCalling, pullModel, testModel } from "../ollama.js";
 import { discardModelTracking, recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
 import { roles, type Model, type Preset, type Recommendation } from "../types.js";
@@ -97,10 +98,19 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   else if (!running) p.log.warn("Ollama is installed but not running. Start it, then run local-coder configure.");
   if (!h.commands.opencode) p.log.warn("OpenCode is not installed. Install it before attempting to launch the configured environment.");
   if (!options.skipValidation && h.commands.opencode) {
-    const state = await checkOpenCodeStateAccess();
+    let state = await checkOpenCodeStateAccess();
+    if (!state.ok && !options.yes && process.stdin.isTTY) {
+      const repair = await p.confirm({ message: "OpenCode cannot write its state directory. Repair its ownership with your administrator password?", initialValue: true });
+      cancelled(repair);
+      if (repair) {
+        p.log.step(`Repairing OpenCode state-directory ownership: ${state.directory}`);
+        state = await repairOpenCodeStateAccess();
+      }
+    }
     if (!state.ok) {
       p.note(state.reason!, "OpenCode cannot run");
-      p.outro("No configuration changes were written. Repair the OpenCode state-directory ownership or permissions, then rerun local-coder.");
+      const command = state.directory ? repairOpenCodeStateCommand(state.directory) : undefined;
+      p.outro(`No configuration changes were written. Repair the OpenCode state-directory ownership or permissions, then rerun local-coder.${command ? `\n\n  ${command}` : ""}`);
       process.exitCode = 1;
       return;
     }

@@ -11,7 +11,8 @@ import { applyInstallationPlan, generateConfig, installConfiguration, planInstal
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
 import { generateAgent } from "../src/opencode/agents.js";
 import { contextModelTag, withContextModels } from "../src/opencode/context-models.js";
-import { checkOpenCodeStateAccess, probeOpenCodeEditing } from "../src/opencode/probe.js";
+import { probeOpenCodeEditing } from "../src/opencode/probe.js";
+import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../src/opencode/state.js";
 import { launchCommand } from "../src/commands/setup.js";
 import type { HardwareInfo } from "../src/types.js";
 
@@ -117,6 +118,16 @@ test("OpenCode state preflight reports an unwritable state directory", async () 
   const result = await checkOpenCodeStateAccess(root, file);
   assert.equal(result.ok, false);
   assert.match(result.reason!, /OpenCode cannot write/);
+});
+
+test("OpenCode state repair only changes the dedicated state directory ownership", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-state-repair-"));
+  const commands: string[][] = [];
+  const result = await repairOpenCodeStateAccess(async args => { commands.push(args); }, root, undefined, "developer");
+  assert.equal(result.ok, true);
+  assert.deepEqual(commands, [["chown", "-R", "developer", path.join(root, ".local", "state", "opencode")]]);
+  assert.equal(repairOpenCodeStateCommand(path.join(root, ".local", "state", "opencode"), "developer"),
+    `sudo chown -R "developer" ${JSON.stringify(path.join(root, ".local", "state", "opencode"))}`);
 });
 
 test("launch command targets the repository root when run from bin", async () => {
