@@ -194,7 +194,7 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   if (running && configured.uniqueModels.every(model => present.has(model.ollamaModel)) && !options.skipValidation && !runtimeValid) {
     await cleanupFailedContextModels();
     p.note(runtimeChecks.join("\n"), "Validation failed");
-    p.outro("No configuration changes were written. Choose a model that passes the OpenCode edit check, or increase Ollama's context allocation, then rerun local-coder.");
+    p.outro("No configuration changes were written. Resolve the failed validation check above, then rerun local-coder. If OpenCode timed out, free memory or choose a faster model.");
     process.exitCode = 1;
     return;
   }

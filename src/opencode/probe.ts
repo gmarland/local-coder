@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Recommendation } from "../types.js";
@@ -39,6 +39,14 @@ function toolError(output: string): string | undefined {
   return undefined;
 }
 
+function externalDirectoryError(output: string): string | undefined {
+  for (const line of output.split("\n")) {
+    const match = line.match(/evaluated permission=external_directory pattern=(\S+) .*action\.action=ask/);
+    if (match) return `OpenCode requested access outside the temporary project: ${match[1]}`;
+  }
+  return undefined;
+}
+
 function recentOutput(output: string): string | undefined {
   const lines = output.trim().split("\n").filter(Boolean);
   if (!lines.length) return undefined;
@@ -49,9 +57,8 @@ function recentOutput(output: string): string | undefined {
 function commandFailure(error: unknown, output: string): string | undefined {
   if (!(error instanceof Error)) return undefined;
   const command = error as OpenCodeCommandError;
+  if (command.killed || command.signal === "SIGTERM") return "OpenCode timed out after 10 minutes";
   const detail = recentOutput(command.stderr || output);
-  if (command.killed || command.signal === "SIGTERM")
-    return `OpenCode timed out after 5 minutes${detail ? `: ${detail}` : ""}`;
   if (command.code !== undefined)
     return `OpenCode exited with status ${command.code}${detail ? `: ${detail}` : ""}`;
   return detail || error.message;
@@ -62,7 +69,7 @@ function commandFailure(error: unknown, output: string): string | undefined {
 export async function probeOpenCodeEditing(recommendation: Recommendation, run: RunOpenCode = runOpenCode, checkState: CheckState = checkOpenCodeStateAccess): Promise<OpenCodeProbe> {
   const state = await checkState();
   if (!state.ok) return state;
-  const project = await mkdtemp(path.join(os.tmpdir(), "local-coder-opencode-probe-"));
+  const project = await realpath(await mkdtemp(path.join(os.tmpdir(), "local-coder-opencode-probe-")));
   try {
     const destination = path.join(project, ".opencode");
     const plan = await planInstallation(destination, recommendation);
@@ -71,14 +78,16 @@ export async function probeOpenCodeEditing(recommendation: Recommendation, run: 
       await writeFile(file.path, file.content);
     }
     const target = path.join(project, "probe.txt");
-    const prompt = "Create probe.txt in the current project with exactly LOCAL_CODER_EDIT_OK followed by a newline. Delegate the repository edit to coder, then read the file to verify it.";
+    await writeFile(target, "LOCAL_CODER_EDIT_PENDING\n");
+    const expectedContent = "LOCAL_CODER_EDIT_OK";
+    const prompt = `Change the existing file ${JSON.stringify(target)} so its complete contents are exactly ${expectedContent} with no newline or other characters. This is a repository edit: call the task tool with subagent_type coder to make the change. Tell coder to read that exact path, edit the file, and read it again. After coder returns, read the file to verify the result. Do not edit it yourself or reconstruct the temporary directory name.`;
     let output = "";
     let commandError: unknown;
     try {
       // Do not use --pure here. It disables the npm provider module required by
       // the generated Ollama configuration, while a normal OpenCode launch loads it.
       const result = await run("opencode", ["run", "--print-logs", "--dir", project, "--agent", "orchestrator", "--format", "json", prompt],
-        { timeout: 300000, maxBuffer: 8 * 1024 * 1024,
+        { timeout: 600000, maxBuffer: 8 * 1024 * 1024,
           env: { ...process.env, OPENCODE_DISABLE_MODELS_FETCH: "1", npm_config_cache: path.join(project, ".npm-cache") } });
       output = `${result.stdout}\n${result.stderr || ""}`;
     } catch (error) {
@@ -87,9 +96,13 @@ export async function probeOpenCodeEditing(recommendation: Recommendation, run: 
       output = `${command.stdout || ""}\n${command.stderr || ""}`;
     }
     const actual = await readFile(target, "utf8").catch(() => undefined);
-    if (actual === "LOCAL_CODER_EDIT_OK\n" && !commandError) return { ok: true };
-    const reason = toolError(output) || commandFailure(commandError, output) ||
-      (actual === undefined ? "OpenCode did not create the file" : "OpenCode created the wrong file content");
+    if (actual === expectedContent && !commandError) return { ok: true };
+    // The file contents alone do not prove OpenCode completed successfully.
+    const failedCommand = commandFailure(commandError, output);
+    const reason = (failedCommand && actual === expectedContent
+      ? `${failedCommand}; probe.txt was edited, but OpenCode did not complete successfully`
+      : failedCommand) || externalDirectoryError(output) || toolError(output) ||
+      (actual === undefined ? "OpenCode removed the probe file" : "OpenCode did not edit the probe file correctly");
     return { ok: false, reason };
   } finally {
     await rm(project, { recursive: true, force: true });

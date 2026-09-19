@@ -124,19 +124,51 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     assert.ok(!args.includes("--pure"));
     assert.equal(options.env.OPENCODE_DISABLE_MODELS_FETCH, "1");
     const project = args[args.indexOf("--dir") + 1];
+    const target = path.join(project, "probe.txt");
+    assert.equal(await readFile(target, "utf8"), "LOCAL_CODER_EDIT_PENDING\n");
+    assert.ok(args.at(-1)!.includes(JSON.stringify(target)));
+    assert.match(args.at(-1)!, /call the task tool with subagent_type coder/);
     assert.equal(options.env.npm_config_cache, path.join(project, ".npm-cache"));
     assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
     assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
     return { stdout: '{"type":"text","part":{"text":"Done"}}\n' };
   };
   const writable = async () => ({ ok: true });
-  assert.deepEqual(await probeOpenCodeEditing(setup, run, writable), { ok: false, reason: "OpenCode did not create the file" });
+  assert.deepEqual(await probeOpenCodeEditing(setup, run, writable), { ok: false, reason: "OpenCode did not edit the probe file correctly" });
   const edited = await probeOpenCodeEditing(setup, async (command, args) => {
     const project = args[args.indexOf("--dir") + 1];
-    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK\n");
-    return { stdout: "" };
+    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK");
+    return { stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "File not found: probe.txt" } } }) };
   }, writable);
   assert.deepEqual(edited, { ok: true });
+});
+
+test("real OpenCode probe reports a timeout after editing", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const failed = await probeOpenCodeEditing(setup, async (_command, args) => {
+    const project = args[args.indexOf("--dir") + 1];
+    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK");
+    throw Object.assign(new Error("Command timed out"), { killed: true, signal: "SIGTERM",
+      stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "File not found: probe.txt" } } }) });
+  }, async () => ({ ok: true }));
+  assert.match(failed.reason!, /OpenCode timed out after 10 minutes/);
+  assert.match(failed.reason!, /probe.txt was edited/);
+  assert.doesNotMatch(failed.reason!, /File not found/);
+});
+
+test("real OpenCode probe identifies an outside-project permission request", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const failed = await probeOpenCodeEditing(setup, async (_command, args) => {
+    const project = args[args.indexOf("--dir") + 1];
+    const wrongPath = project.replace("opencode-probe", "opendcode-probe");
+    return {
+      stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "The user rejected permission to use this specific tool call." } } }),
+      stderr: `timestamp=2026-09-18T07:13:07.051Z level=INFO message=evaluated permission=external_directory pattern=${wrongPath}/probe.txt action.permission=external_directory action.pattern=* action.action=ask`
+    };
+  }, async () => ({ ok: true }));
+  assert.match(failed.reason!, /requested access outside the temporary project/);
+  assert.match(failed.reason!, /opendcode-probe/);
+  assert.doesNotMatch(failed.reason!, /user rejected permission/);
 });
 
 test("real OpenCode probe reports the command status and OpenCode stderr", async () => {

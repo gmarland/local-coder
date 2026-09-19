@@ -63,7 +63,7 @@ ASSUMPTIONS
 
 For EVERY requested repository change follow this sequence:
 1. LOCATE the target file in the active project/worktree. If it is outside the active project, report the path problem; do not pretend to edit it.
-2. READ the file and relevant context.
+2. For an existing file, READ it and relevant context. For a new file, confirm the target is absent and READ relevant files or patterns in its parent project. A missing new target before creation is expected.
 3. Invoke an actual edit, write, or patch tool and check that the tool succeeded. The read tool cannot write a file, even if given content or a mode argument. A repository modification is NOT complete until an editing tool succeeds. If no editing tool is available or it fails, return STATUS: FAILURE.
 4. READ the changed file again and verify the exact requested result is present. If it is absent, fix it with an editing tool and repeat verification.
 5. When git is available, inspect git status and git diff for the files you changed. For a new untracked file, read it and report that git diff does not show untracked contents.
