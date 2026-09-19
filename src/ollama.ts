@@ -161,6 +161,55 @@ export async function probeDelegation(model: string, request: FetchLike = fetch)
   } catch { return { ok: false, reason: "request-failed" }; }
 }
 
+async function probeRoleReport(
+  model: string,
+  toolName: string,
+  system: string,
+  user: string,
+  parameters: Record<string, unknown>,
+  accepts: (args: Record<string, unknown>) => boolean,
+  request: FetchLike
+): Promise<ToolCallProbe> {
+  try {
+    const r = await request(`${endpoint}/v1/chat/completions`, {
+      method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
+      body: JSON.stringify({ model, stream: false, think: false, temperature: 0, max_tokens: 512,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        tools: [{ type: "function", function: { name: toolName, description: "Return the required structured assessment.", parameters } }],
+        tool_choice: { type: "function", function: { name: toolName } } })
+    });
+    if (!r.ok) return { ok: false, reason: "request-failed" };
+    const value = await r.json() as { choices?: { message?: { tool_calls?: { function?: { name?: string; arguments?: unknown } }[] } }[] };
+    const calls = value.choices?.[0]?.message?.tool_calls;
+    if (!Array.isArray(calls) || !calls.length) return { ok: false, reason: "missing-tool-call" };
+    const call = calls.find(item => item.function?.name === toolName);
+    if (!call) return { ok: false, reason: "wrong-tool" };
+    let args = call.function?.arguments;
+    if (typeof args === "string") {
+      try { args = JSON.parse(args); } catch { return { ok: false, reason: "wrong-arguments" }; }
+    }
+    if (!args || typeof args !== "object" || Array.isArray(args) || !accepts(args as Record<string, unknown>))
+      return { ok: false, reason: "wrong-arguments" };
+    return { ok: true };
+  } catch { return { ok: false, reason: "request-failed" }; }
+}
+
+export async function probeVerificationJudgement(model: string, request: FetchLike = fetch): Promise<ToolCallProbe> {
+  return probeRoleReport(model, "report_verification",
+    "You independently verify repository state. A coder claim is not evidence. Report FAIL when an expected regression test still fails.",
+    "Contract: calculator.test expects add(2, 2) to equal 4. Repository evidence: the focused test exited 1 because add(2, 2) returned 5. Coder claimed SUCCESS. Report the evidence-based result.",
+    { type: "object", properties: { status: { type: "string", enum: ["PASS", "FAIL"] }, failures: { type: "array", items: { type: "string" } } }, required: ["status", "failures"] },
+    args => args.status === "FAIL" && Array.isArray(args.failures) && args.failures.length > 0, request);
+}
+
+export async function probeReviewJudgement(model: string, request: FetchLike = fetch): Promise<ToolCallProbe> {
+  return probeRoleReport(model, "report_review",
+    "You review verified code for defects beyond test results. Report actionable security defects.",
+    "Review this change: function userFile(name) { return '/uploads/' + name } then readFile(userFile(req.query.name)). Tests cover only avatar.png. Assess path traversal.",
+    { type: "object", properties: { actionable: { type: "boolean" }, finding: { type: "string" } }, required: ["actionable", "finding"] },
+    args => args.actionable === true && typeof args.finding === "string" && /path|travers|saniti|validat/i.test(args.finding), request);
+}
+
 // Exercise real filesystem mutation through a narrow synthetic tool interface. This
 // checks model behaviour independently of its final text, without touching a project.
 export async function probeRepositoryEditing(model: string, request: FetchLike = fetch): Promise<EditingProbe> {

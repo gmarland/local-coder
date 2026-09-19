@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { realpath } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { loadCatalogue } from "./models/catalogue.js";
 import { detectHardware } from "./hardware.js";
 import type { Preset } from "./types.js";
@@ -9,8 +9,11 @@ import { statusCommand, modelsCommand } from "./commands/inspect.js";
 import { reinstall } from "./commands/reinstall.js";
 import { setup } from "./commands/setup.js";
 import { uninstall } from "./commands/uninstall.js";
+import { verifyTaskContract, type TaskContract } from "./opencode/task-contract.js";
+import { createSafeValidationRunner } from "./opencode/validation-runner.js";
 
 const usage = `Usage: local-coder [setup|configure|reinstall|uninstall|status|models] [options]
+       local-coder verify-contract <contract.json> [--root <path>] [--baseline <json>] [--changed <path> ...]
 
 Options:
   --project [path]       Use <path>/.opencode instead of the global config
@@ -22,6 +25,29 @@ Options:
   --skip-validation      Skip model response smoke tests
   --dry-run              Preview without writing or downloading
   -h, --help             Show this help`;
+
+async function verifyContractCommand(argv: string[]): Promise<void> {
+  const contractPath = argv.shift();
+  if (!contractPath || contractPath.startsWith("-")) throw new Error("verify-contract requires a contract JSON file");
+  let root = process.cwd();
+  let baselinePath: string | undefined;
+  const changedPaths: string[] = [];
+  while (argv.length) {
+    const arg = argv.shift()!;
+    if (arg === "--root") { const value = argv.shift(); if (!value) throw new Error("--root requires a path"); root = value; }
+    else if (arg === "--baseline") { baselinePath = argv.shift(); if (!baselinePath) throw new Error("--baseline requires a JSON file"); }
+    else if (arg === "--changed") { const value = argv.shift(); if (!value) throw new Error("--changed requires a path"); changedPaths.push(value); }
+    else throw new Error(`Unknown verify-contract option: ${arg}`);
+  }
+  const resolvedRoot = await realpath(root);
+  const contract = JSON.parse(await readFile(contractPath, "utf8")) as TaskContract;
+  const beforeContents = baselinePath ? JSON.parse(await readFile(baselinePath, "utf8")) as Record<string, string | undefined> : undefined;
+  const result = await verifyTaskContract(resolvedRoot, contract, createSafeValidationRunner(resolvedRoot), {
+    ...(changedPaths.length ? { changedPaths } : {}), ...(beforeContents ? { beforeContents } : {})
+  });
+  console.log(JSON.stringify(result, null, 2));
+  if (result.status === "fail") process.exitCode = 1;
+}
 
 function parseArgs(argv: string[]): Options {
   const out: Options = { command: "setup", dryRun: false, yes: false, backup: false, noPull: false, skipValidation: false };
@@ -60,7 +86,9 @@ async function destination(options: Options): Promise<string> {
   return path.join(process.env.HOME, ".config", "opencode");
 }
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv[0] === "verify-contract") return verifyContractCommand(argv.slice(1));
+  const options = parseArgs(argv);
   const dest = await destination(options);
   if (options.command === "status") return statusCommand(dest);
   if (options.command === "uninstall") return uninstall(options, dest);

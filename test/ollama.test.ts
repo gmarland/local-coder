@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createContextModel, deleteModel, installedModelDigests, loadedModelContext, modelAdvertisesTools, probeDelegation, probeRepositoryEditing, probeToolCalling, testModel } from "../src/ollama.js";
+import { createContextModel, deleteModel, installedModelDigests, loadedModelContext, modelAdvertisesTools, probeDelegation, probeRepositoryEditing, probeReviewJudgement, probeToolCalling, probeVerificationJudgement, testModel } from "../src/ollama.js";
 
 const jsonResponse = (value: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(value), {
   status,
@@ -63,6 +63,31 @@ test("delegation probe requires a structured task call selecting coder", async (
   } }] } }] })), { ok: false, reason: "wrong-arguments" });
   assert.deepEqual(await probeDelegation("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
     name: "task", arguments: { subagent_type: "coder", description: "Edit README", prompt: "Update README", task_id: "1" }
+  } }] } }] })), { ok: false, reason: "wrong-arguments" });
+});
+
+test("role probes require evidence-based verifier and reviewer judgements", async () => {
+  const verifier = await probeVerificationJudgement("test-model", (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.tools[0].function.name, "report_verification");
+    assert.match(body.messages[1].content, /returned 5/);
+    return jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+      name: "report_verification", arguments: { status: "FAIL", failures: ["Expected 4; observed 5"] }
+    } }] } }] });
+  });
+  assert.deepEqual(verifier, { ok: true });
+
+  const reviewer = await probeReviewJudgement("test-model", (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.tools[0].function.name, "report_review");
+    assert.match(body.messages[1].content, /path traversal/);
+    return jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+      name: "report_review", arguments: { actionable: true, finding: "Path traversal permits reading files outside uploads" }
+    } }] } }] });
+  });
+  assert.deepEqual(reviewer, { ok: true });
+  assert.deepEqual(await probeVerificationJudgement("test-model", () => jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
+    name: "report_verification", arguments: { status: "PASS", failures: [] }
   } }] } }] })), { ok: false, reason: "wrong-arguments" });
 });
 

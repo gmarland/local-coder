@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { Recommendation } from "../types.js";
 import { planInstallation } from "./config.js";
 import { checkOpenCodeStateAccess, type StateAccess } from "./state.js";
+import { analyzeOpenCodeTrace } from "./workflow.js";
 
 type RunOpenCode = (command: string, args: string[], options: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv }) => Promise<{ stdout: string; stderr?: string }>;
 type CheckState = () => Promise<StateAccess>;
@@ -115,13 +116,14 @@ This footer must remain unchanged.
       output = `${command.stdout || ""}\n${command.stderr || ""}`;
     }
     const actual = await readFile(target, "utf8").catch(() => undefined);
-    if (actual === expectedContent && !commandError) return { ok: true };
+    const trace = analyzeOpenCodeTrace(output);
+    if (actual === expectedContent && !commandError && trace.ok) return { ok: true };
     // The file contents alone do not prove OpenCode completed successfully.
     const failedCommand = commandFailure(commandError, output);
     const reason = (failedCommand && actual === expectedContent
       ? `${failedCommand}; README.md was edited correctly, but OpenCode did not complete successfully`
       : failedCommand) || externalDirectoryError(output) || toolError(output) ||
-      (actual === undefined ? "OpenCode removed the probe README" : "OpenCode did not make the exact minimal README correction");
+      (actual === undefined ? "OpenCode removed the probe README" : actual !== expectedContent ? "OpenCode did not make the exact minimal README correction" : trace.reason);
     return { ok: false, reason };
   } finally {
     await rm(project, { recursive: true, force: true });

@@ -19,7 +19,8 @@ export function compatibleModels(models: Model[], h: HardwareInfo, role: Role): 
   const memory = effectiveMemoryGB(h);
   const capability = models.some(m => m.roles.includes(roleMap[role]))
     ? roleMap[role] : legacyCapability[role] ?? roleMap[role];
-  return models.filter(m => m.roles.includes(capability) && m.minimumMemoryGB <= memory && m.storageGB + 5 <= h.diskAvailableGB);
+  return models.filter(m => m.toolCalling && m.agenticCoding && m.roles.includes(capability) &&
+    m.minimumMemoryGB <= memory && m.storageGB + 5 <= h.diskAvailableGB);
 }
 export function summarizeAssignments(assignments: Record<Role, Model>): Pick<Recommendation, "uniqueModels" | "storageGB"> {
   const uniqueModels = [...new Map(roles.map(role => [assignments[role].ollamaModel, assignments[role]])).values()];
@@ -51,7 +52,11 @@ export function recommend(models: Model[], h: HardwareInfo, preset: Preset = "ba
   const coder = fitting("coder")[0] || compatibleModels(models, h, "coder").sort((a,b) => a.minimumMemoryGB-b.minimumMemoryGB)[0];
   if (!coder) throw new Error("No catalogue model fits this machine's memory and disk space");
   if (preset === "minimal") for (const role of allRoles) assignments[role] = coder;
-  else for (const role of allRoles) assignments[role] = fitting(role)[0] || coder;
+  else for (const role of allRoles) {
+    const selected = fitting(role)[0] || compatibleModels(models, h, role).sort((a, b) => a.minimumMemoryGB - b.minimumMemoryGB)[0];
+    if (!selected) throw new Error(`No compatible ${role} model fits this machine's memory and disk space`);
+    assignments[role] = selected;
+  }
   if (tier === "VERY_HIGH" && preset !== "fast" && preset !== "minimal")
     assignments.reviewer = fitting("reviewer").find(m => m.id !== assignments.coder.id) || assignments.reviewer;
   const summary = summarizeAssignments(assignments);

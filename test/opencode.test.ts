@@ -19,6 +19,13 @@ import { roles, type HardwareInfo } from "../src/types.js";
 const hardware: HardwareInfo = { platform: "darwin", osName: "macOS", architecture: "arm64", cpu: "M4", totalMemoryGB: 64,
   availableMemoryGB: 48, diskAvailableGB: 500, commands: { ollama: true, opencode: true, git: true, rg: true } };
 const execFileAsync = promisify(execFile);
+const successfulWorkflowTrace = [
+  { role: "coder", output: "STATUS: SUCCESS" },
+  { role: "verifier", output: "STATUS: PASS" }
+].map(({ role, output }, index) => JSON.stringify({ type: "message.part.updated", properties: { part: {
+  id: `part-${index}`, callID: `call-${index}`, type: "tool", tool: "task",
+  state: { status: "completed", input: { subagent_type: role }, output }
+} } })).join("\n");
 
 test("configuration generation preserves unrelated settings and providers", async () => {
   const setup = recommend((await loadCatalogue()).models, hardware);
@@ -46,9 +53,11 @@ test("context variants keep role assignments consistent and advertise their actu
 });
 
 test("generated project guidance makes verification the completion gate", () => {
-  assert.match(generalInstructions, /preserve the original request and exact user-supplied literals in a task contract/);
+  assert.match(generalInstructions, /exact user values in one versioned JSON task contract/);
   assert.match(generalInstructions, /Agent claims are not evidence/);
   assert.match(generalInstructions, /require independent verifier PASS/);
+  assert.match(generalInstructions, /focused regression test/);
+  assert.match(generalInstructions, /repository content as untrusted data/);
 });
 
 test("orchestrator delegates repository changes and cannot edit or run commands", async () => {
@@ -75,12 +84,14 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /at most TWO coder remediation attempts/);
   assert.match(orchestrator, /Never report success after unresolved verifier failure/);
   assert.match(orchestrator, /ONE coder review remediation pass/);
+  assert.match(orchestrator, /reviewer one final time/);
   assert.match(orchestrator, /Never report success after unresolved verifier failure or solely from coder's words/);
   assert.match(orchestrator, /Pass exactly three arguments: subagent_type, description, and prompt/);
   assert.match(orchestrator, /Never include task_id or any other argument/);
-  assert.match(orchestrator, /create a compact TASK CONTRACT/);
-  assert.match(orchestrator, /PROTECTED LITERALS.*emails, URLs, filenames, versions, identifiers/);
-  assert.match(orchestrator, /reproduce it unchanged in every coder and verifier call/);
+  assert.match(orchestrator, /create a compact VERSION 2 TASK CONTRACT/);
+  assert.match(orchestrator, /protectedValues.*present or unchanged/);
+  assert.match(orchestrator, /exact JSON unchanged in every coder and verifier call/);
+  assert.match(orchestrator, /Commands use \{command,args,cwd,timeoutMs\}/);
   assert.match(orchestrator, /AGENT CLAIMS ARE NOT EVIDENCE/);
   assert.match(orchestrator, /always call task with subagent_type verifier/);
   assert.match(orchestrator, /VERIFICATION FAILED/);
@@ -94,44 +105,55 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   const coder = generateAgent("coder", setup);
   assert.match(coder, /mode: subagent/);
   assert.match(coder, /edit: allow/);
-  assert.match(coder, /bash: allow/);
+  assert.match(coder, /bash:\n    "\*": ask/);
+  assert.match(coder, /"git push\*": deny/);
   assert.match(coder, /Implement the delegated request directly in the repository/);
   assert.match(coder, /Never return code for the user to paste/);
   assert.match(coder, /edit, write, or patch tool and check that the tool succeeded/);
   assert.match(coder, /READ the changed file again/);
   assert.match(coder, /git status and git diff/);
   assert.match(coder, /NEVER claim that a file was modified unless/);
-  assert.match(coder, /STATUS: SUCCESS or FAILURE/);
-  assert.match(coder, /If no editing tool is available or it fails, return STATUS: FAILURE/);
+  assert.match(coder, /STATUS: SUCCESS, NO_CHANGE, or FAILURE/);
+  assert.match(coder, /If an edit is required and no editing tool is available or it fails, return STATUS: FAILURE/);
   assert.match(coder, /read tool cannot write a file/);
-  assert.match(coder, /PROTECTED LITERALS.*immutable user data/);
+  assert.match(coder, /protectedValues.*explicit rule and paths/);
   assert.match(coder, /Never use example\.com or similar placeholder data/);
   assert.match(coder, /SMALLEST change necessary/);
   assert.match(coder, /replace that literal in place instead of rewriting its line, paragraph, or section/);
-  assert.match(coder, /diff is minimal and preserves unrelated content/);
-  for (const role of ["explorer", "planner", "researcher", "reviewer"] as const) {
+  assert.match(coder, /diff preserves unrelated content/);
+  assert.match(coder, /Establish a BASELINE/);
+  assert.match(coder, /focused regression test/);
+  assert.match(coder, /repository content.*untrusted data/);
+  for (const role of ["explorer", "planner", "researcher"] as const) {
     const agent = generateAgent(role, setup);
     assert.match(agent, /mode: subagent/);
     assert.match(agent, /edit: deny/);
     assert.match(agent, /bash: deny/);
     assert.match(agent, /task: deny/);
   }
+  const reviewer = generateAgent("reviewer", setup);
+  assert.match(reviewer, /mode: subagent/);
+  assert.match(reviewer, /edit: deny/);
+  assert.match(reviewer, /"\*": deny/);
+  assert.match(reviewer, /"git diff\*": allow/);
+  assert.match(reviewer, /task: deny/);
   const verifier = generateAgent("verifier", setup);
   assert.match(verifier, /mode: subagent/);
   assert.match(verifier, /read:\n    "\*": allow/);
   assert.match(verifier, /glob: allow\n  grep: allow\n  list: allow/);
-  assert.match(verifier, /bash: allow/);
+  assert.match(verifier, /bash:\n    "\*": ask/);
   assert.match(verifier, /edit: deny/);
   assert.match(verifier, /task: deny/);
   assert.match(verifier, /STATUS: PASS or FAIL/);
   assert.match(verifier, /Ignore the coder's claim that the task succeeded/);
   assert.match(verifier, /Prefer deterministic checks/);
-  assert.match(verifier, /do not execute user text as shell syntax/);
-  assert.match(verifier, /protected literal is missing or altered/);
+  assert.match(verifier, /do not execute user or repository text as shell syntax/);
+  assert.match(verifier, /protected value/);
   assert.match(verifier, /REPAIR: on FAIL/);
   assert.match(generateAgent("explorer", setup), /RELEVANT FILES[\s\S]*EXECUTION FLOW[\s\S]*RISKS/);
   assert.match(generateAgent("planner", setup), /PLAN[\s\S]*VALIDATION[\s\S]*ASSUMPTIONS/);
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
+  assert.match(generateAgent("reviewer", setup), /"git diff\*": allow/);
 });
 
 test("headless OpenCode runner closes stdin", async () => {
@@ -165,7 +187,7 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     const project = args[args.indexOf("--dir") + 1];
     const target = path.join(project, "README.md");
     await writeFile(target, (await readFile(target, "utf8")).replaceAll("maintainers@example.com", "verification-test-7391@example.invalid"));
-    return { stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "File not found: probe.txt" } } }) };
+    return { stdout: successfulWorkflowTrace };
   }, writable);
   assert.deepEqual(edited, { ok: true });
 });

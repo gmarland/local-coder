@@ -89,3 +89,16 @@ test("recommendations deduplicate by Ollama tag and refresh custom disk warnings
   assert.equal(custom.storageGB, 28);
   assert.match(custom.warnings.join(" "), /Models need 28 GB/);
 });
+
+test("recommendation rejects non-agentic and unavailable role fallbacks", async () => {
+  const { models } = await loadCatalogue();
+  const unsafe = { ...models[0], id: "unsafe", ollamaModel: "unsafe:latest", quality: 100, toolCalling: false };
+  const selected = recommend([unsafe, models[0]], machine(16));
+  assert.ok(Object.values(selected.assignments).every(model => model.id !== "unsafe"));
+
+  const withoutPlanning = { ...models[0], roles: models[0].roles.filter(role => role !== "planning") };
+  const tooLargePlanner = { ...models[1], id: "planner-too-large", ollamaModel: "planner:large", roles: ["planning" as const],
+    minimumMemoryGB: 128, recommendedMemoryGB: 128 };
+  await assert.doesNotReject(async () => recommend([withoutPlanning], machine(16)));
+  assert.throws(() => recommend([withoutPlanning, tooLargePlanner], machine(16)), /No compatible planner model/);
+});

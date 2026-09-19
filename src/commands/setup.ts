@@ -9,7 +9,7 @@ import { applyInstallationPlan, configuredContext, planInstallation, readExistin
 import { contextModelTag, withContextModels } from "../opencode/context-models.js";
 import { probeOpenCodeEditing } from "../opencode/probe.js";
 import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../opencode/state.js";
-import { createContextModel, deleteModel, installedModelDigests, installedModels, loadedModelContext, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeToolCalling, pullModel, testModel } from "../ollama.js";
+import { createContextModel, deleteModel, installedModelDigests, installedModels, loadedModelContext, modelAdvertisesTools, ollamaRunning, probeDelegation, probeRepositoryEditing, probeReviewJudgement, probeToolCalling, probeVerificationJudgement, pullModel, testModel } from "../ollama.js";
 import { discardModelTracking, recordPulled, recordPullIntent, setSelected } from "../persistence/registry.js";
 import { roles, type Model, type Preset, type Recommendation } from "../types.js";
 import { cancelled, showRecommendation, type Options } from "./common.js";
@@ -183,6 +183,16 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     const delegation = await probeDelegation(configured.assignments.orchestrator.ollamaModel);
     runtimeChecks.push(`Orchestrator selects coder via task: ${delegation.ok ? "✓" : `failed (${probeFailure(delegation.reason)})`}`);
     runtimeValid = runtimeValid && delegation.ok;
+  }
+  if (!options.skipValidation && present.has(configured.assignments.verifier.ollamaModel) && runtimeValid) {
+    const verification = await probeVerificationJudgement(configured.assignments.verifier.ollamaModel);
+    runtimeChecks.push(`Verifier rejects a seeded regression: ${verification.ok ? "✓" : `failed (${probeFailure(verification.reason)})`}`);
+    runtimeValid = runtimeValid && verification.ok;
+  }
+  if (!options.skipValidation && present.has(configured.assignments.reviewer.ollamaModel) && runtimeValid) {
+    const review = await probeReviewJudgement(configured.assignments.reviewer.ollamaModel);
+    runtimeChecks.push(`Reviewer identifies a seeded security defect: ${review.ok ? "✓" : `failed (${probeFailure(review.reason)})`}`);
+    runtimeValid = runtimeValid && review.ok;
   }
   if (!options.skipValidation && h.commands.opencode && runtimeValid && configured.uniqueModels.every(model => present.has(model.ollamaModel))) {
     p.log.step("Testing a real OpenCode edit in a temporary project (this may take several minutes)");

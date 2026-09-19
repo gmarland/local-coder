@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { verifyTaskContract, type TaskContract, type VerificationResult } from "../src/opencode/task-contract.js";
+import { serializeTaskContract, taskContractHash, validateTaskContract, verifyTaskContract, type TaskContract, type VerificationResult } from "../src/opencode/task-contract.js";
 
 const wrongContact = `## Contact
 
@@ -95,4 +95,69 @@ test("configured validation commands contribute deterministic evidence", async (
   const passed = await verifyTaskContract(await repository(correctContact), contract, async command => ({ ok: command === "npm test", output: "ok" }));
   assert.equal(passed.status, "pass");
   assert.ok(passed.evidence.some(item => item.includes("Validation passed: npm test")));
+});
+
+test("versioned contracts serialize and hash deterministically", () => {
+  const first = { ...contactContract(), version: 2 as const, targetFiles: ["z.md", "README.md"], allowedPaths: ["test", "src"] };
+  const second = { allowedPaths: ["src", "test"], targetFiles: ["README.md", "z.md"], version: 2 as const,
+    forbiddenOutcomes: first.forbiddenOutcomes, expectedOutcomes: first.expectedOutcomes, preserveUnrelatedContent: true,
+    protectedLiterals: first.protectedLiterals, request: first.request };
+  assert.equal(serializeTaskContract(first), serializeTaskContract(second));
+  assert.equal(taskContractHash(first), taskContractHash(second));
+  assert.match(taskContractHash(first), /^[a-f0-9]{64}$/);
+});
+
+test("verification rejects out-of-scope changes and altered protected values", async () => {
+  const root = await repository(`${correctContact}\nRelease: 1.2.3\n`);
+  const contract: TaskContract = {
+    version: 2,
+    request: "Keep release 1.2.3 while updating the contact.",
+    targetFiles: ["README.md"],
+    allowedPaths: ["README.md"],
+    protectedValues: [{ value: "1.2.3", rule: "unchanged", paths: ["README.md"] }],
+    expectedOutcomes: [{ kind: "fileContains", path: "README.md", value: "gareth@deckarddesigns.com" }],
+    preserveUnrelatedContent: true
+  };
+  const result = await verifyTaskContract(root, contract, undefined, {
+    changedPaths: ["README.md", "src/unrelated.ts"],
+    beforeContents: { "README.md": `${wrongContact}\nRelease: 1.2.3\n` }
+  });
+  assert.equal(result.status, "fail");
+  assert.ok(result.failures.some(item => item.includes("outside contract scope")));
+  assert.ok(result.evidence.some(item => item.includes("retained 1 occurrence")));
+});
+
+test("structured outcomes verify missing files, JSON values, and argv commands", async () => {
+  const root = await repository(correctContact);
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  const contract: TaskContract = {
+    version: 2,
+    request: "Verify the project metadata.",
+    expectedOutcomes: [
+      { kind: "fileMissing", path: "temporary.txt" },
+      { kind: "fileNotContains", path: "README.md", value: "maintainers@example.com" },
+      { kind: "jsonPointerEquals", path: "package.json", pointer: "/scripts/test", value: "node --test" }
+    ],
+    preserveUnrelatedContent: true,
+    requiresTests: true,
+    validationCommands: [{ command: "npm", args: ["test"], timeoutMs: 60_000 }]
+  };
+  const result = await verifyTaskContract(root, contract, async command => ({
+    ok: typeof command !== "string" && command.command === "npm" && command.args?.[0] === "test", output: "ok"
+  }));
+  assert.equal(result.status, "pass");
+  assert.equal(validateTaskContract(contract).length, 0);
+});
+
+test("behaviour contracts require tests or an explicit reason", () => {
+  const contract: TaskContract = { request: "Change behaviour", expectedOutcomes: [{ kind: "fileExists", path: "src/index.ts" }],
+    preserveUnrelatedContent: true, requiresTests: true };
+  assert.deepEqual(validateTaskContract(contract), ["a test command or explicit noTestReason is required"]);
+});
+
+test("malformed runtime contract data fails closed", async () => {
+  const malformed = { request: "broken", expectedOutcomes: "not-an-array", preserveUnrelatedContent: true } as unknown as TaskContract;
+  const result = await verifyTaskContract(await repository(correctContact), malformed);
+  assert.equal(result.status, "fail");
+  assert.ok(result.failures.some(item => item.includes("at least one expected outcome")));
 });
