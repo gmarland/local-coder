@@ -2,12 +2,14 @@ import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { Recommendation } from "../types.js";
 import { planInstallation } from "./config.js";
 import { checkOpenCodeStateAccess, type StateAccess } from "./state.js";
 
 type RunOpenCode = (command: string, args: string[], options: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv }) => Promise<{ stdout: string; stderr?: string }>;
 type CheckState = () => Promise<StateAccess>;
+const execFileAsync = promisify(execFile);
 
 export const runOpenCode: RunOpenCode = (command, args, options) => new Promise((resolve, reject) => {
   const child = execFile(command, args, options, (error, stdout, stderr) => {
@@ -77,10 +79,27 @@ export async function probeOpenCodeEditing(recommendation: Recommendation, run: 
       await mkdir(path.dirname(file.path), { recursive: true });
       await writeFile(file.path, file.content);
     }
-    const target = path.join(project, "probe.txt");
-    await writeFile(target, "LOCAL_CODER_EDIT_PENDING\n");
-    const expectedContent = "LOCAL_CODER_EDIT_OK";
-    const prompt = `Change the existing file ${JSON.stringify(target)} so its complete contents are exactly ${expectedContent} with no newline or other characters. This is a repository edit: call the task tool with subagent_type coder to make the change. Tell coder to read that exact path, edit the file, and read it again. After coder returns, read the file to verify the result. Do not edit it yourself or reconstruct the temporary directory name.`;
+    const target = path.join(project, "README.md");
+    const originalContent = `# Verification fixture
+
+This introduction must remain unchanged.
+
+## Contact
+
+For inquiries, contact [maintainers@example.com](mailto:maintainers@example.com).
+
+This footer must remain unchanged.
+`;
+    const protectedLiteral = "verification-test-7391@example.invalid";
+    const expectedContent = originalContent.replaceAll("maintainers@example.com", protectedLiteral);
+    await writeFile(target, originalContent);
+    // Git improves the agent's diff evidence when available, but exact-content
+    // verification below does not depend on it.
+    try {
+      await execFileAsync("git", ["init", "-q"], { cwd: project, timeout: 5000 });
+      await execFileAsync("git", ["add", "README.md"], { cwd: project, timeout: 5000 });
+    } catch { /* Non-git environments still receive an exact filesystem check. */ }
+    const prompt = `In the existing ${JSON.stringify(target)}, replace only the two occurrences of maintainers@example.com with the exact value ${protectedLiteral}. Preserve every other byte of the file. This is a repository edit: follow the required coder then verifier workflow. The exact email is a protected user literal, not example data. Do not edit the file yourself or reconstruct the temporary directory name. Report success only after independent verification of the repository state.`;
     let output = "";
     let commandError: unknown;
     try {
@@ -100,9 +119,9 @@ export async function probeOpenCodeEditing(recommendation: Recommendation, run: 
     // The file contents alone do not prove OpenCode completed successfully.
     const failedCommand = commandFailure(commandError, output);
     const reason = (failedCommand && actual === expectedContent
-      ? `${failedCommand}; probe.txt was edited, but OpenCode did not complete successfully`
+      ? `${failedCommand}; README.md was edited correctly, but OpenCode did not complete successfully`
       : failedCommand) || externalDirectoryError(output) || toolError(output) ||
-      (actual === undefined ? "OpenCode removed the probe file" : "OpenCode did not edit the probe file correctly");
+      (actual === undefined ? "OpenCode removed the probe README" : "OpenCode did not make the exact minimal README correction");
     return { ok: false, reason };
   } finally {
     await rm(project, { recursive: true, force: true });

@@ -9,7 +9,7 @@ import { loadCatalogue } from "../src/models/catalogue.js";
 import { recommend } from "../src/models/recommend.js";
 import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
-import { generateAgent } from "../src/opencode/agents.js";
+import { generalInstructions, generateAgent } from "../src/opencode/agents.js";
 import { contextModelTag, withContextModels } from "../src/opencode/context-models.js";
 import { probeOpenCodeEditing, runOpenCode } from "../src/opencode/probe.js";
 import { checkOpenCodeStateAccess, repairOpenCodeStateAccess, repairOpenCodeStateCommand } from "../src/opencode/state.js";
@@ -45,6 +45,12 @@ test("context variants keep role assignments consistent and advertise their actu
   assert.equal(models[contextModelTag(source)].limit.context, 32768);
 });
 
+test("generated project guidance makes verification the completion gate", () => {
+  assert.match(generalInstructions, /preserve the original request and exact user-supplied literals in a task contract/);
+  assert.match(generalInstructions, /Agent claims are not evidence/);
+  assert.match(generalInstructions, /require independent verifier PASS/);
+});
+
 test("orchestrator delegates repository changes and cannot edit or run commands", async () => {
   const setup = recommend((await loadCatalogue()).models, hardware);
   const orchestrator = generateAgent("orchestrator", setup);
@@ -72,6 +78,15 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /Never report success after unresolved verifier failure or solely from coder's words/);
   assert.match(orchestrator, /Pass exactly three arguments: subagent_type, description, and prompt/);
   assert.match(orchestrator, /Never include task_id or any other argument/);
+  assert.match(orchestrator, /create a compact TASK CONTRACT/);
+  assert.match(orchestrator, /PROTECTED LITERALS.*emails, URLs, filenames, versions, identifiers/);
+  assert.match(orchestrator, /reproduce it unchanged in every coder and verifier call/);
+  assert.match(orchestrator, /AGENT CLAIMS ARE NOT EVIDENCE/);
+  assert.match(orchestrator, /always call task with subagent_type verifier/);
+  assert.match(orchestrator, /VERIFICATION FAILED/);
+  assert.match(orchestrator, /Do not reset the count or broaden the edit/);
+  assert.match(orchestrator, /complete only after the latest verifier returns PASS/);
+  assert.match(orchestrator, /Never describe unverified repository contents as fact/);
 });
 
 test("specialists have the intended edit, shell, and web permissions", async () => {
@@ -89,6 +104,11 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(coder, /STATUS: SUCCESS or FAILURE/);
   assert.match(coder, /If no editing tool is available or it fails, return STATUS: FAILURE/);
   assert.match(coder, /read tool cannot write a file/);
+  assert.match(coder, /PROTECTED LITERALS.*immutable user data/);
+  assert.match(coder, /Never use example\.com or similar placeholder data/);
+  assert.match(coder, /SMALLEST change necessary/);
+  assert.match(coder, /replace that literal in place instead of rewriting its line, paragraph, or section/);
+  assert.match(coder, /diff is minimal and preserves unrelated content/);
   for (const role of ["explorer", "planner", "researcher", "reviewer"] as const) {
     const agent = generateAgent(role, setup);
     assert.match(agent, /mode: subagent/);
@@ -104,6 +124,11 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(verifier, /edit: deny/);
   assert.match(verifier, /task: deny/);
   assert.match(verifier, /STATUS: PASS or FAIL/);
+  assert.match(verifier, /Ignore the coder's claim that the task succeeded/);
+  assert.match(verifier, /Prefer deterministic checks/);
+  assert.match(verifier, /do not execute user text as shell syntax/);
+  assert.match(verifier, /protected literal is missing or altered/);
+  assert.match(verifier, /REPAIR: on FAIL/);
   assert.match(generateAgent("explorer", setup), /RELEVANT FILES[\s\S]*EXECUTION FLOW[\s\S]*RISKS/);
   assert.match(generateAgent("planner", setup), /PLAN[\s\S]*VALIDATION[\s\S]*ASSUMPTIONS/);
   assert.match(generateAgent("researcher", setup), /webfetch: allow\n  websearch: allow/);
@@ -124,20 +149,22 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     assert.ok(!args.includes("--pure"));
     assert.equal(options.env.OPENCODE_DISABLE_MODELS_FETCH, "1");
     const project = args[args.indexOf("--dir") + 1];
-    const target = path.join(project, "probe.txt");
-    assert.equal(await readFile(target, "utf8"), "LOCAL_CODER_EDIT_PENDING\n");
+    const target = path.join(project, "README.md");
+    assert.match(await readFile(target, "utf8"), /maintainers@example\.com/);
     assert.ok(args.at(-1)!.includes(JSON.stringify(target)));
-    assert.match(args.at(-1)!, /call the task tool with subagent_type coder/);
+    assert.match(args.at(-1)!, /verification-test-7391@example\.invalid/);
+    assert.match(args.at(-1)!, /coder then verifier workflow/);
     assert.equal(options.env.npm_config_cache, path.join(project, ".npm-cache"));
     assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
     assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
     return { stdout: '{"type":"text","part":{"text":"Done"}}\n' };
   };
   const writable = async () => ({ ok: true });
-  assert.deepEqual(await probeOpenCodeEditing(setup, run, writable), { ok: false, reason: "OpenCode did not edit the probe file correctly" });
+  assert.deepEqual(await probeOpenCodeEditing(setup, run, writable), { ok: false, reason: "OpenCode did not make the exact minimal README correction" });
   const edited = await probeOpenCodeEditing(setup, async (command, args) => {
     const project = args[args.indexOf("--dir") + 1];
-    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK");
+    const target = path.join(project, "README.md");
+    await writeFile(target, (await readFile(target, "utf8")).replaceAll("maintainers@example.com", "verification-test-7391@example.invalid"));
     return { stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "File not found: probe.txt" } } }) };
   }, writable);
   assert.deepEqual(edited, { ok: true });
@@ -147,12 +174,13 @@ test("real OpenCode probe reports a timeout after editing", async () => {
   const setup = recommend((await loadCatalogue()).models, hardware);
   const failed = await probeOpenCodeEditing(setup, async (_command, args) => {
     const project = args[args.indexOf("--dir") + 1];
-    await writeFile(path.join(project, "probe.txt"), "LOCAL_CODER_EDIT_OK");
+    const target = path.join(project, "README.md");
+    await writeFile(target, (await readFile(target, "utf8")).replaceAll("maintainers@example.com", "verification-test-7391@example.invalid"));
     throw Object.assign(new Error("Command timed out"), { killed: true, signal: "SIGTERM",
       stdout: JSON.stringify({ part: { type: "tool", state: { status: "error", error: "File not found: probe.txt" } } }) });
   }, async () => ({ ok: true }));
   assert.match(failed.reason!, /OpenCode timed out after 10 minutes/);
-  assert.match(failed.reason!, /probe.txt was edited/);
+  assert.match(failed.reason!, /README\.md was edited correctly/);
   assert.doesNotMatch(failed.reason!, /File not found/);
 });
 
