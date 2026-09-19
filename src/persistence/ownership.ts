@@ -15,8 +15,8 @@ interface CleanupAction {
   replacement?: string | null;
 }
 export interface CleanupPlan { destination: string; actions: CleanupAction[]; preview: CleanupResult }
-const ownershipName = "local-coder-ownership.json";
-const managedPaths = new Set(["opencode.json", "opencode.jsonc", "AGENTS.md", "local-coder-state.json", "agents/orchestrator.md", "agents/explorer.md", "agents/planner.md", "agents/coder.md", "agents/verifier.md", "agents/researcher.md", "agents/reviewer.md"]);
+const ownershipName = "localstack-ownership.json";
+const managedPaths = new Set(["opencode.json", "opencode.jsonc", "AGENTS.md", "localstack-state.json", "agents/orchestrator.md", "agents/explorer.md", "agents/planner.md", "agents/coder.md", "agents/verifier.md", "agents/researcher.md", "agents/reviewer.md"]);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const ownPath = (destination: string) => path.join(destination, ownershipName);
 async function isSymlink(file: string): Promise<boolean> {
@@ -45,7 +45,7 @@ export async function recordWrite(destination: string, target: string, content: 
   if (await isSymlink(target) || (relative.startsWith("agents/") && await isSymlink(path.join(destination, "agents"))))
     throw new Error(`Cannot manage a symbolic link: ${target}`);
   const ownership = await readOwnership(destination) ?? { version: 1 as const, files: {} };
-  const original = relative === "local-coder-state.json" ? null :
+  const original = relative === "localstack-state.json" ? null :
     relative in ownership.files ? ownership.files[relative].original : existsSync(target) ? await readFile(target, "utf8") : null;
   ownership.files[relative] = { original, generated: content, generatedHash: hash(content) };
   await save(destination, ownership);

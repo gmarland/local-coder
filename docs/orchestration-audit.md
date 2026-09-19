@@ -34,7 +34,7 @@ temporary probe file on disk rather than trusting agent output.
 Task classification, specialist call ordering, preservation of user literals,
 construction of acceptance checks, verifier invocation, and remediation are
 otherwise enforced by generated prompts. OpenCode owns the live conversation and
-task calls; `local-coder` is not in the execution path after configuration is
+task calls; `localstack` is not in the execution path after configuration is
 generated. Consequently, this package cannot programmatically reject an
 orchestrator's premature final response without introducing a custom execution
 harness, which is outside the project's architecture.

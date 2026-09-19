@@ -1,6 +1,6 @@
-# local-coder
+# LocalStack
 
-`local-coder` configures [OpenCode](https://opencode.ai) to use local, tool-capable models through [Ollama](https://ollama.com). It detects the machine, recommends a small role-based model set, lets the developer customise it, downloads only after confirmation, and validates the result.
+LocalStack configures [OpenCode](https://opencode.ai) to use local, tool-capable models through [Ollama](https://ollama.com). It detects the machine, recommends a small role-based model set, lets the developer customise it, downloads only after confirmation, and validates the result.
 
 Setup is local-only: the CLI does not upload prompts, source code, hardware details, or telemetry. Generated OpenCode configuration is ordinary JSON and Markdown. When OpenCode's researcher uses web tools, its search queries and fetched URLs go to the configured web service.
 
@@ -17,36 +17,36 @@ The wizard detects missing tools and explains what remains to install. Git and r
 ```sh
 npm install
 npm link
-setup-ai
+localstack
 ```
 
-The package exposes both `setup-ai` and `local-coder`. Without a command, setup runs. Configuration is global by default (`~/.config/opencode`) or project-local with `--project`:
+The package exposes both `setup-ai` and `localstack`. Without a command, setup runs. Configuration is global by default (`~/.config/opencode`) or project-local with `--project`:
 
 ```sh
-local-coder
-local-coder --project
-local-coder --project /path/to/repository
-local-coder configure
-local-coder reinstall
-local-coder uninstall --dry-run
-local-coder uninstall
-local-coder uninstall --project /path/to/repository
-local-coder status
-local-coder models
+localstack
+localstack --project
+localstack --project /path/to/repository
+localstack configure
+localstack reinstall
+localstack uninstall --dry-run
+localstack uninstall
+localstack uninstall --project /path/to/repository
+localstack status
+localstack models
 ```
 
 `reinstall` rebuilds the OpenCode configuration and agent files from the last saved selection. It does not download, replace, test, or remove any Ollama models. Use `--project` to restore a project-local setup, and add `--dry-run` to preview the files and assignments without writing anything.
 
-`uninstall` removes the setup in the selected scope. It restores files that existed before setup, removes files local-coder created, and deletes Ollama models that local-coder downloaded or created for that scope once no other local-coder scope uses them. It preserves models that were already installed, shared models, unrelated OpenCode settings, and user edits made after setup. Preview the removal plan with `--dry-run`; use `--yes` for automation. Ollama must be running to remove models. If it is unavailable, rerun `uninstall` when it is running.
+`uninstall` removes the setup in the selected scope. It restores files that existed before setup, removes files LocalStack created, and deletes Ollama models that LocalStack downloaded or created for that scope once no other LocalStack scope uses them. It preserves models that were already installed, shared models, unrelated OpenCode settings, and user edits made after setup. Preview the removal plan with `--dry-run`; use `--yes` for automation. Ollama must be running to remove models. If it is unavailable, rerun `uninstall` when it is running.
 
-Setup records file ownership in `local-coder-ownership.json` beside the generated config and model ownership in `${XDG_DATA_HOME:-~/.local/share}/local-coder/registry.json`. These records let uninstall identify what it may remove. Older setups without an ownership record can have exactly matching generated agent files removed, but their prior config and model ownership cannot be reconstructed reliably. Uninstall reports those items for manual review. Timestamped backups are retained because they may contain user files.
+Setup records file ownership in `localstack-ownership.json` beside the generated config and model ownership in `${XDG_DATA_HOME:-~/.local/share}/localstack/registry.json`. These records let uninstall identify what it may remove. Older setups without an ownership record can have exactly matching generated agent files removed, but their prior config and model ownership cannot be reconstructed reliably. Uninstall reports those items for manual review. Timestamped backups are retained because they may contain user files.
 
 Useful automation and preview options:
 
 ```sh
-local-coder --dry-run --yes --preset balanced
-local-coder --yes --preset minimal --no-pull
-local-coder --yes --backup
+localstack --dry-run --yes --preset balanced
+localstack --yes --preset minimal --no-pull
+localstack --yes --backup
 ```
 
 Presets are `balanced`, `quality`, `fast`, and `minimal`. The interactive custom flow allows a different compatible model for every role or a manually entered Ollama tag. A single model may serve several roles; downloads and storage estimates are deduplicated.
@@ -68,8 +68,8 @@ agents/
   verifier.md
   researcher.md
   reviewer.md
-local-coder-state.json
-local-coder-ownership.json
+localstack-state.json
+localstack-ownership.json
 ```
 
 Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Interactive setup asks whether to create timestamped backups before replacing existing generated files and defaults to overwriting without backups. Automated `--yes` runs also overwrite without backups unless `--backup` is supplied. Invalid existing configuration causes setup to stop without overwriting it.

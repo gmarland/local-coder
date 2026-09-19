@@ -14,7 +14,7 @@ test("bundled catalogue parses and has unique agentic models", async () => {
 });
 
 test("catalogue parser rejects duplicate entries", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-catalogue-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-catalogue-"));
   const file = path.join(dir, "bad.json");
   const valid = (await loadCatalogue()).models[0];
   await writeFile(file, JSON.stringify({ schemaVersion: 1, updated: "test", models: [valid, valid] }));
@@ -22,7 +22,7 @@ test("catalogue parser rejects duplicate entries", async () => {
 });
 
 test("catalogue rejects invalid roles and duplicate Ollama tags", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-catalogue-shape-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-catalogue-shape-"));
   const file = path.join(dir, "bad.json");
   const valid = (await loadCatalogue()).models[0];
   await writeFile(file, JSON.stringify({ schemaVersion: 1, updated: "test", models: [{ ...valid, roles: ["unknown"] }] }));

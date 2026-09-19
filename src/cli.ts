@@ -10,7 +10,7 @@ import { reinstall } from "./commands/reinstall.js";
 import { setup } from "./commands/setup.js";
 import { uninstall } from "./commands/uninstall.js";
 
-const usage = `Usage: local-coder [setup|configure|reinstall|uninstall|status|models] [options]
+const usage = `Usage: localstack [setup|configure|reinstall|uninstall|status|models] [options]
 
 Options:
   --project [path]       Use <path>/.opencode instead of the global config
@@ -70,4 +70,4 @@ async function main() {
   if (options.command === "models") return modelsCommand(catalogue.models, h);
   return setup(options, catalogue.models, h, dest);
 }
-main().catch(error => { console.error(`local-coder: ${error instanceof Error ? error.message : error}`); process.exitCode = 1; });
+main().catch(error => { console.error(`localstack: ${error instanceof Error ? error.message : error}`); process.exitCode = 1; });

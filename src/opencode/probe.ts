@@ -71,7 +71,7 @@ function commandFailure(error: unknown, output: string): string | undefined {
 export async function probeOpenCodeEditing(recommendation: Recommendation, run: RunOpenCode = runOpenCode, checkState: CheckState = checkOpenCodeStateAccess): Promise<OpenCodeProbe> {
   const state = await checkState();
   if (!state.ok) return state;
-  const project = await realpath(await mkdtemp(path.join(os.tmpdir(), "local-coder-opencode-probe-")));
+  const project = await realpath(await mkdtemp(path.join(os.tmpdir(), "localstack-opencode-probe-")));
   try {
     const destination = path.join(project, ".opencode");
     const plan = await planInstallation(destination, recommendation);

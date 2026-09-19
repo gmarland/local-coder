@@ -15,7 +15,7 @@ import type { HardwareInfo } from "../src/types.js";
 const execFileAsync = promisify(execFile);
 
 test("uninstall restores overwritten files and removes files it created", async () => {
-  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-uninstall-"));
+  const dest = await mkdtemp(path.join(os.tmpdir(), "localstack-uninstall-"));
   await mkdir(path.join(dest, "agents"));
   const original = path.join(dest, "AGENTS.md");
   const created = path.join(dest, "agents", "coder.md");
@@ -34,7 +34,7 @@ test("uninstall restores overwritten files and removes files it created", async 
 });
 
 test("uninstall removes generated config values but keeps later user settings", async () => {
-  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-merge-"));
+  const dest = await mkdtemp(path.join(os.tmpdir(), "localstack-merge-"));
   const file = path.join(dest, "opencode.json");
   const before = { mcp: { docs: { type: "local" } }, instructions: ["RULES.md"] };
   const generated = { ...before, default_agent: "orchestrator", instructions: ["RULES.md", "AGENTS.md"],
@@ -47,8 +47,8 @@ test("uninstall removes generated config values but keeps later user settings", 
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { ...before, instructions: ["RULES.md", "NEW.md"], plugin: ["user-plugin"] });
 });
 
-test("uninstall keeps user additions in a config that local-coder created", async () => {
-  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-created-config-"));
+test("uninstall keeps user additions in a config that LocalStack created", async () => {
+  const dest = await mkdtemp(path.join(os.tmpdir(), "localstack-created-config-"));
   const file = path.join(dest, "opencode.json");
   const generated = { default_agent: "orchestrator", instructions: ["AGENTS.md"], provider: { ollama: { models: { "coder:latest": {} } } } };
   await recordWrite(dest, file, `${JSON.stringify(generated)}\n`);
@@ -59,7 +59,7 @@ test("uninstall keeps user additions in a config that local-coder created", asyn
 });
 
 test("uninstall reports changes to generated agent files", async () => {
-  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-conflict-"));
+  const dest = await mkdtemp(path.join(os.tmpdir(), "localstack-conflict-"));
   const file = path.join(dest, "AGENTS.md");
   await recordWrite(dest, file, "generated\n");
   await writeFile(file, "edited\n");
@@ -69,7 +69,7 @@ test("uninstall reports changes to generated agent files", async () => {
 });
 
 test("cleanup plan preserves a file edited after preview", async () => {
-  const dest = await mkdtemp(path.join(os.tmpdir(), "local-coder-plan-conflict-"));
+  const dest = await mkdtemp(path.join(os.tmpdir(), "localstack-plan-conflict-"));
   const file = path.join(dest, "AGENTS.md");
   await recordWrite(dest, file, "generated\n");
   await writeFile(file, "generated\n");
@@ -82,7 +82,7 @@ test("cleanup plan preserves a file edited after preview", async () => {
 });
 
 test("model registry keeps shared and preexisting models, then releases managed models", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-registry-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-registry-"));
   const file = path.join(dir, "registry.json");
   await setSelected("scope-a", ["owned:latest", "preexisting:latest"], file);
   await recordPulled("scope-a", "owned:latest", "digest-1", file);
@@ -97,7 +97,7 @@ test("model registry keeps shared and preexisting models, then releases managed 
 });
 
 test("registry retains previously pulled models after reconfiguration and failed deletion", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-history-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-history-"));
   const file = path.join(dir, "registry.json");
   await setSelected("scope", ["old:latest"], file);
   await recordPulled("scope", "old:latest", "digest-old", file);
@@ -109,7 +109,7 @@ test("registry retains previously pulled models after reconfiguration and failed
 });
 
 test("pull intent survives interruption before a digest can be recorded", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-intent-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-intent-"));
   const file = path.join(dir, "registry.json");
   await setSelected("scope", ["candidate:latest"], file);
   await recordPullIntent("scope", "candidate:latest", file);
@@ -119,12 +119,12 @@ test("pull intent survives interruption before a digest can be recorded", async 
 });
 
 test("discarding a failed setup variant preserves the selection that preceded it", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "local-coder-discard-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "localstack-discard-"));
   const file = path.join(dir, "registry.json");
   await setSelected("scope", ["base:latest"], file);
   await recordPulled("scope", "base:latest", "base-digest", file);
-  await recordPulled("scope", "local-coder-context:latest", "variant-digest", file);
-  await discardModelTracking("scope", ["local-coder-context:latest"], file);
+  await recordPulled("scope", "localstack-context:latest", "variant-digest", file);
+  await discardModelTracking("scope", ["localstack-context:latest"], file);
   const registry = await readRegistry(file);
   assert.deepEqual(registry.scopes.scope.selected, ["base:latest"]);
   assert.deepEqual(registry.scopes.scope.pulled, ["base:latest"]);
@@ -132,7 +132,7 @@ test("discarding a failed setup variant preserves the selection that preceded it
 });
 
 test("CLI previews and uninstalls a project-local setup", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-cli-uninstall-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-cli-uninstall-"));
   const project = path.join(root, "project");
   const dest = path.join(project, ".opencode");
   await mkdir(project);
@@ -142,23 +142,23 @@ test("CLI previews and uninstalls a project-local setup", async () => {
   const cli = new URL("../src/cli.js", import.meta.url).pathname;
   const env = { ...process.env, XDG_DATA_HOME: path.join(root, "data") };
   await execFileAsync(process.execPath, [cli, "uninstall", "--project", project, "--dry-run"], { env });
-  assert.equal((await readFile(path.join(dest, "local-coder-state.json"), "utf8")).includes("configuredAt"), true);
+  assert.equal((await readFile(path.join(dest, "localstack-state.json"), "utf8")).includes("configuredAt"), true);
   await execFileAsync(process.execPath, [cli, "uninstall", "--project", project, "--yes"], { env });
-  await assert.rejects(readFile(path.join(dest, "local-coder-state.json")));
+  await assert.rejects(readFile(path.join(dest, "localstack-state.json")));
   await assert.rejects(readFile(path.join(dest, "AGENTS.md")));
-  await assert.rejects(readFile(path.join(dest, "local-coder-ownership.json")));
+  await assert.rejects(readFile(path.join(dest, "localstack-ownership.json")));
 });
 
 test("CLI clears an abandoned scope after its project directory is removed", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-missing-project-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-missing-project-"));
   const project = path.join(root, "project");
   const dest = path.join(project, ".opencode");
   const data = path.join(root, "data");
   await mkdir(project);
-  await setSelected(dest, ["preexisting:latest"], path.join(data, "local-coder", "registry.json"));
+  await setSelected(dest, ["preexisting:latest"], path.join(data, "localstack", "registry.json"));
   await rm(project, { recursive: true });
   const cli = new URL("../src/cli.js", import.meta.url).pathname;
   await execFileAsync(process.execPath, [cli, "uninstall", "--project", project, "--yes"],
     { env: { ...process.env, XDG_DATA_HOME: data } });
-  assert.deepEqual((await readRegistry(path.join(data, "local-coder", "registry.json"))).scopes, {});
+  assert.deepEqual((await readRegistry(path.join(data, "localstack", "registry.json"))).scopes, {});
 });

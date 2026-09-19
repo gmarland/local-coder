@@ -96,7 +96,7 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   if (!options.yes) { const proceed = await p.confirm({ message: "Proceed?", initialValue: false }); cancelled(proceed); if (!proceed) { p.cancel("No changes were made."); return; } }
   let running = await ollamaRunning();
   if (!h.commands.ollama) p.log.warn("Ollama is not installed. Install it, then rerun this command to download and validate models.");
-  else if (!running) p.log.warn("Ollama is installed but not running. Start it, then run local-coder configure.");
+  else if (!running) p.log.warn("Ollama is installed but not running. Start it, then run localstack configure.");
   if (!h.commands.opencode) p.log.warn("OpenCode is not installed. Install it before attempting to launch the configured environment.");
   if (!options.skipValidation && h.commands.opencode) {
     let state = await checkOpenCodeStateAccess();
@@ -111,7 +111,7 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
     if (!state.ok) {
       p.note(state.reason!, "OpenCode cannot run");
       const command = state.directory ? repairOpenCodeStateCommand(state.directory) : undefined;
-      p.outro(`No configuration changes were written. Repair the OpenCode state-directory ownership or permissions, then rerun local-coder.${command ? `\n\n  ${command}` : ""}`);
+      p.outro(`No configuration changes were written. Repair the OpenCode state-directory ownership or permissions, then rerun localstack.${command ? `\n\n  ${command}` : ""}`);
       process.exitCode = 1;
       return;
     }
@@ -194,7 +194,7 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   if (running && configured.uniqueModels.every(model => present.has(model.ollamaModel)) && !options.skipValidation && !runtimeValid) {
     await cleanupFailedContextModels();
     p.note(runtimeChecks.join("\n"), "Validation failed");
-    p.outro("No configuration changes were written. Resolve the failed validation check above, then rerun local-coder. If OpenCode timed out, free memory or choose a faster model.");
+    p.outro("No configuration changes were written. Resolve the failed validation check above, then rerun localstack. If OpenCode timed out, free memory or choose a faster model.");
     process.exitCode = 1;
     return;
   }
@@ -212,5 +212,5 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   const checks: string[] = [`OpenCode config parses: ${configValid ? "✓" : "failed"}`, `Agent definitions loaded by OpenCode: ${agentsValid ? "✓" : "failed"}`, ...runtimeChecks];
   const setupValid = configValid && agentsValid && runtimeValid;
   p.note(checks.join("\n"), "Validation");
-  p.outro(setupValid ? `Setup complete. OpenCode edits the project directory passed here:\n\n  ${await launchCommand(options, dest)}\n\nConfig: ${install.configPath}` : `Configuration written, but runtime setup is incomplete. Resolve the warnings and rerun:\n\n  local-coder configure\n\nWhen ready, launch OpenCode with an explicit project path.\nConfig: ${install.configPath}`);
+  p.outro(setupValid ? `Setup complete. OpenCode edits the project directory passed here:\n\n  ${await launchCommand(options, dest)}\n\nConfig: ${install.configPath}` : `Configuration written, but runtime setup is incomplete. Resolve the warnings and rerun:\n\n  localstack configure\n\nWhen ready, launch OpenCode with an explicit project path.\nConfig: ${install.configPath}`);
 }

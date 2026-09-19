@@ -1,9 +1,9 @@
 {
-  "name": "local-coder",
+  "name": "localstack",
   "version": "1.0.0",
-  "description": "Configure OpenCode to use capable local models through Ollama",
+  "description": "LocalStack configures OpenCode to use capable local models through Ollama",
   "type": "module",
-  "bin": { "local-coder": "bin/local-coder", "setup-ai": "bin/local-coder" },
+  "bin": { "localstack": "bin/localstack", "setup-ai": "bin/localstack" },
   "files": ["bin", "dist", "catalog"],
   "scripts": {
     "build": "rm -rf dist && tsc",

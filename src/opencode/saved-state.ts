@@ -30,25 +30,25 @@ function fallbackModel(ollamaModel: string): Model {
   return { id: `restored-${ollamaModel}`, name: ollamaModel, ollamaModel,
     roles: ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"], minimumMemoryGB: 1, recommendedMemoryGB: 1,
     storageGB: 0, contextWindow: 32768, toolCalling: true, agenticCoding: true, speed: 1, quality: 1,
-    notes: "Restored from saved local-coder state." };
+    notes: "Restored from saved LocalStack state." };
 }
 export async function readSavedRecommendation(destination: string, catalogueModels: Model[]): Promise<Recommendation> {
-  const statePath = path.join(destination, "local-coder-state.json");
+  const statePath = path.join(destination, "localstack-state.json");
   let value: unknown;
   try { value = JSON.parse(await readFile(statePath, "utf8")); }
   catch (error) {
     const reason = error instanceof Error && "code" in error && error.code === "ENOENT" ? "is missing" : "is invalid";
-    throw new Error(`Saved setup state ${reason} at ${statePath}; run local-coder setup to choose a configuration.`);
+    throw new Error(`Saved setup state ${reason} at ${statePath}; run localstack setup to choose a configuration.`);
   }
   if (!isSavedState(value))
-    throw new Error(`Saved setup state is invalid at ${statePath}; run local-coder setup to choose a configuration.`);
+    throw new Error(`Saved setup state is invalid at ${statePath}; run localstack setup to choose a configuration.`);
   const state = value;
   const assignments = {} as Record<Role, Model>;
   const legacySource: Partial<Record<Role, Role>> = { explorer: "researcher", planner: "orchestrator", verifier: "researcher" };
   for (const role of roles) {
     const source = state.roles[role] ? role : legacySource[role];
     const tag = source ? state.roles[source] : undefined;
-    if (!tag) throw new Error(`Saved setup state is invalid at ${statePath}; run local-coder setup to choose a configuration.`);
+    if (!tag) throw new Error(`Saved setup state is invalid at ${statePath}; run localstack setup to choose a configuration.`);
     const snapshot = state.version === 2 && isRecord(state.assignments) ? state.assignments[source!] : undefined;
     assignments[role] = isModel(snapshot) && snapshot.ollamaModel === tag
       ? snapshot

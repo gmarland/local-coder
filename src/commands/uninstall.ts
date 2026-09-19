@@ -34,14 +34,14 @@ export async function uninstall(options: Options, dest: string) {
   const ownership = await readOwnership(dest);
   const registry = await readRegistry();
   const scope = registry.scopes[dest];
-  const statePath = path.join(dest, "local-coder-state.json");
-  if (!ownership && !scope && !existsSync(statePath)) { console.log(`Local AI setup is not configured in ${dest}`); return; }
+  const statePath = path.join(dest, "localstack-state.json");
+  if (!ownership && !scope && !existsSync(statePath)) { console.log(`LocalStack setup is not configured in ${dest}`); return; }
   const filePlan = await planCleanupFiles(dest);
   const files = filePlan.preview;
   const models = modelsToDelete(registry, dest);
   const legacy = !ownership && existsSync(statePath);
   const legacyFiles = legacy ? await cleanupLegacyFiles(dest, true) : { removed: [] as string[], conflicts: [] as string[] };
-  p.intro("Uninstall local-coder setup");
+  p.intro("Uninstall LocalStack setup");
   p.note([`Scope: ${dest}`,
     `Remove files: ${[...files.removed, ...legacyFiles.removed].length ? [...files.removed, ...legacyFiles.removed].join(", ") : "none"}`,
     `Restore files: ${files.restored.length ? files.restored.join(", ") : "none"}`,
@@ -52,7 +52,7 @@ export async function uninstall(options: Options, dest: string) {
   if (options.dryRun) { p.outro("Dry run complete; no changes were made."); return; }
   if (!options.yes && !process.stdin.isTTY) throw new Error("Interactive input is unavailable; rerun with --yes");
   if (!options.yes) {
-    const proceed = await p.confirm({ message: "Remove this local-coder setup and its owned models?", initialValue: false });
+    const proceed = await p.confirm({ message: "Remove this LocalStack setup and its owned models?", initialValue: false });
     cancelled(proceed);
     if (!proceed) { p.cancel("No changes were made."); return; }
   }
@@ -68,7 +68,7 @@ export async function uninstall(options: Options, dest: string) {
       const actual = digests.get(model);
       if (actual === undefined) { deleted.push(model); continue; }
       if (registry.managed[model] && registry.managed[model] !== actual) {
-        p.log.warn(`Kept ${model}: its digest changed since local-coder pulled it.`); failed.push(model); continue;
+        p.log.warn(`Kept ${model}: its digest changed since LocalStack pulled it.`); failed.push(model); continue;
       }
       try { await deleteModel(model); deleted.push(model); p.log.info(`Deleted ${model}`); }
       catch (error) { p.log.warn(error instanceof Error ? error.message : String(error)); failed.push(model); }
@@ -79,6 +79,5 @@ export async function uninstall(options: Options, dest: string) {
     p.log.warn(`Needs manual review: ${[...cleaned.conflicts, ...legacyCleaned.conflicts, ...failed, ...(legacy ? ["legacy configuration and models"] : [])].join(", ")}`);
     process.exitCode = 1;
     p.outro("Uninstall is incomplete; rerun after resolving the reported items.");
-  } else p.outro("Local-coder setup removed.");
+  } else p.outro("LocalStack setup removed.");
 }
-

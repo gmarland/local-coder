@@ -12,7 +12,7 @@ test("tool probe accepts a structured call with the expected argument", async ()
     assert.match(String(input), /\/v1\/chat\/completions$/);
     assert.equal(JSON.parse(String(init?.body)).max_tokens, 512);
     return jsonResponse({
-      choices: [{ message: { tool_calls: [{ function: { name: "local_coder_probe", arguments: { token: "local-coder-probe-7f3a" } } }] } }]
+      choices: [{ message: { tool_calls: [{ function: { name: "localstack_probe", arguments: { token: "localstack-probe-7f3a" } } }] } }]
     });
   });
   assert.deepEqual(result, { ok: true });
@@ -20,14 +20,14 @@ test("tool probe accepts a structured call with the expected argument", async ()
 
 test("tool probe accepts OpenAI-style string arguments", async () => {
   const result = await probeToolCalling("test-model", () => jsonResponse({
-    choices: [{ message: { tool_calls: [{ function: { name: "local_coder_probe", arguments: '{"token":"local-coder-probe-7f3a"}' } }] } }]
+    choices: [{ message: { tool_calls: [{ function: { name: "localstack_probe", arguments: '{"token":"localstack-probe-7f3a"}' } }] } }]
   }));
   assert.deepEqual(result, { ok: true });
 });
 
 test("tool probe rejects a JSON tool request returned as assistant text", async () => {
   const result = await probeToolCalling("test-model", () => jsonResponse({
-    choices: [{ message: { content: '{"name":"local_coder_probe","arguments":{"token":"local-coder-probe-7f3a"}}' } }]
+    choices: [{ message: { content: '{"name":"localstack_probe","arguments":{"token":"localstack-probe-7f3a"}}' } }]
   }));
   assert.deepEqual(result, { ok: false, reason: "missing-tool-call" });
 });
@@ -39,7 +39,7 @@ test("tool probe rejects the wrong tool and malformed arguments", async () => {
   assert.deepEqual(wrongTool, { ok: false, reason: "wrong-tool" });
 
   const wrongArguments = await probeToolCalling("test-model", () => jsonResponse({
-    choices: [{ message: { tool_calls: [{ function: { name: "local_coder_probe", arguments: { token: "wrong" } } }] } }]
+    choices: [{ message: { tool_calls: [{ function: { name: "localstack_probe", arguments: { token: "wrong" } } }] } }]
   }));
   assert.deepEqual(wrongArguments, { ok: false, reason: "wrong-arguments" });
 });
@@ -77,10 +77,10 @@ test("loaded context reports Ollama's allocation, not model metadata", async () 
 });
 
 test("context variant creation sets num_ctx without changing the source model", async () => {
-  await createContextModel("qwen3:8b", "local-coder-test:ctx32768", 32768, (input, init) => {
+  await createContextModel("qwen3:8b", "localstack-test:ctx32768", 32768, (input, init) => {
     assert.match(String(input), /\/api\/create$/);
     assert.deepEqual(JSON.parse(String(init?.body)), {
-      from: "qwen3:8b", model: "local-coder-test:ctx32768", parameters: { num_ctx: 32768 }, stream: false
+      from: "qwen3:8b", model: "localstack-test:ctx32768", parameters: { num_ctx: 32768 }, stream: false
     });
     return jsonResponse({ status: "success" });
   });

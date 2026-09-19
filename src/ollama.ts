@@ -80,7 +80,7 @@ export async function loadedModelContext(model: string, request: FetchLike = fet
 }
 
 export async function probeToolCalling(model: string, request: FetchLike = fetch): Promise<ToolCallProbe> {
-  const token = "local-coder-probe-7f3a";
+  const token = "localstack-probe-7f3a";
   try {
     const r = await request(`${endpoint}/v1/chat/completions`, {
       method: "POST",
@@ -89,11 +89,11 @@ export async function probeToolCalling(model: string, request: FetchLike = fetch
       body: JSON.stringify({
         model,
         stream: false,
-        messages: [{ role: "user", content: `Call local_coder_probe with token ${token}. Do not answer in text.` }],
+        messages: [{ role: "user", content: `Call localstack_probe with token ${token}. Do not answer in text.` }],
         tools: [{
           type: "function",
           function: {
-            name: "local_coder_probe",
+            name: "localstack_probe",
             description: "Checks whether structured tool calling works.",
             parameters: {
               type: "object",
@@ -110,7 +110,7 @@ export async function probeToolCalling(model: string, request: FetchLike = fetch
     const value = await r.json() as { choices?: { message?: { tool_calls?: { function?: { name?: string; arguments?: unknown } }[] } }[] };
     const calls = value.choices?.[0]?.message?.tool_calls;
     if (!Array.isArray(calls) || calls.length === 0) return { ok: false, reason: "missing-tool-call" };
-    const call = calls.find(item => item.function?.name === "local_coder_probe");
+    const call = calls.find(item => item.function?.name === "localstack_probe");
     if (!call) return { ok: false, reason: "wrong-tool" };
     let args = call.function?.arguments;
     if (typeof args === "string") {
@@ -164,7 +164,7 @@ export async function probeDelegation(model: string, request: FetchLike = fetch)
 // Exercise real filesystem mutation through a narrow synthetic tool interface. This
 // checks model behaviour independently of its final text, without touching a project.
 export async function probeRepositoryEditing(model: string, request: FetchLike = fetch): Promise<EditingProbe> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "local-coder-edit-probe-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "localstack-edit-probe-"));
   const file = path.join(directory, "test.txt");
   let readBeforeEdit = false;
   let edited = false;

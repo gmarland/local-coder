@@ -209,7 +209,7 @@ test("real OpenCode probe reports the command status and OpenCode stderr", async
 });
 
 test("OpenCode state preflight reports an unwritable state directory", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-state-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-state-"));
   const file = path.join(root, "not-a-directory");
   await writeFile(file, "blocked");
   const result = await checkOpenCodeStateAccess(root, file);
@@ -218,7 +218,7 @@ test("OpenCode state preflight reports an unwritable state directory", async () 
 });
 
 test("OpenCode state repair only changes the dedicated state directory ownership", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-state-repair-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-state-repair-"));
   const commands: string[][] = [];
   const result = await repairOpenCodeStateAccess(async args => { commands.push(args); }, root, undefined, "developer");
   assert.equal(result.ok, true);
@@ -228,7 +228,7 @@ test("OpenCode state repair only changes the dedicated state directory ownership
 });
 
 test("launch command targets the repository root when run from bin", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-root-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-root-"));
   await mkdir(path.join(root, "bin"));
   await execFileAsync("git", ["init", "-q", root]);
   const canonicalRoot = await realpath(root);
@@ -238,7 +238,7 @@ test("launch command targets the repository root when run from bin", async () =>
 });
 
 test("installation backs up and merges existing configuration and agents", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-install-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-install-"));
   await mkdir(path.join(destination, "agents"));
   await writeFile(path.join(destination, "opencode.json"), '{ "plugin": ["kept"] }\n');
   await writeFile(path.join(destination, "agents", "coder.md"), "existing\n");
@@ -251,14 +251,14 @@ test("installation backs up and merges existing configuration and agents", async
     assert.match(await readFile(path.join(destination, "agents", `${role}.md`), "utf8"), new RegExp(`model: ollama/`));
   assert.equal((await readdir(path.join(destination, "agents"))).filter(name => name.endsWith(".md")).length, 7);
   assert.ok((await readdir(path.join(destination, "agents"))).some(name => name.startsWith("coder.md.backup-")));
-  const state = JSON.parse(await readFile(path.join(destination, "local-coder-state.json"), "utf8"));
+  const state = JSON.parse(await readFile(path.join(destination, "localstack-state.json"), "utf8"));
   assert.equal(state.version, 2);
   assert.equal(state.assignments.coder.ollamaModel, state.roles.coder);
   for (const role of roles) assert.equal(state.assignments[role].ollamaModel, state.roles[role]);
 });
 
 test("installation overwrites generated files without creating backups by default", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-overwrite-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-overwrite-"));
   await mkdir(path.join(destination, "agents"));
   await writeFile(path.join(destination, "opencode.json"), '{ "plugin": ["kept"] }\n');
   await writeFile(path.join(destination, "agents", "coder.md"), "existing\n");
@@ -270,7 +270,7 @@ test("installation overwrites generated files without creating backups by defaul
 });
 
 test("invalid existing config is never overwritten", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-invalid-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-invalid-"));
   const file = path.join(destination, "opencode.json");
   await writeFile(file, "{ invalid");
   await assert.rejects(readExistingConfig(file), /Cannot safely merge/);
@@ -278,7 +278,7 @@ test("invalid existing config is never overwritten", async () => {
 });
 
 test("JSONC with comments and trailing commas is merged in place", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-jsonc-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-jsonc-"));
   const file = path.join(destination, "opencode.jsonc");
   await writeFile(file, '{\n  // retain this logical setting\n  "plugin": ["kept"],\n}\n');
   const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware));
@@ -288,7 +288,7 @@ test("JSONC with comments and trailing commas is merged in place", async () => {
 });
 
 test("installation plan uses the existing JSONC path and rejects changes after preview", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-plan-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-plan-"));
   const configPath = path.join(destination, "opencode.jsonc");
   await writeFile(configPath, '{ "plugin": ["original"] }\n');
   const plan = await planInstallation(destination, recommend((await loadCatalogue()).models, hardware));
@@ -300,7 +300,7 @@ test("installation plan uses the existing JSONC path and rejects changes after p
 });
 
 test("saved version 2 state restores the exact model assignments", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-v2-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-restore-v2-"));
   const catalogue = await loadCatalogue();
   const original = recommend(catalogue.models, hardware);
   await installConfiguration(destination, original);
@@ -310,10 +310,10 @@ test("saved version 2 state restores the exact model assignments", async () => {
 });
 
 test("legacy state restores catalogue and manual Ollama models", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-v1-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-restore-v1-"));
   const catalogue = await loadCatalogue();
   const known = catalogue.models[0].ollamaModel;
-  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+  await writeFile(path.join(destination, "localstack-state.json"), JSON.stringify({
     version: 1, configuredAt: new Date().toISOString(), preset: "balanced", tier: "HIGH", storageGB: 1,
     roles: { orchestrator: known, coder: "private-code-model:latest", researcher: known, reviewer: known }
   }));
@@ -327,14 +327,14 @@ test("legacy state restores catalogue and manual Ollama models", async () => {
 });
 
 test("legacy version 2 snapshots supply models for newly added roles", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-restore-old-v2-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-restore-old-v2-"));
   const catalogue = await loadCatalogue();
   const general = catalogue.models[0];
   const coding = catalogue.models[1];
   const legacyRoles = { orchestrator: general.ollamaModel, coder: coding.ollamaModel,
     researcher: general.ollamaModel, reviewer: coding.ollamaModel };
   const assignments = { orchestrator: general, coder: coding, researcher: general, reviewer: coding };
-  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+  await writeFile(path.join(destination, "localstack-state.json"), JSON.stringify({
     version: 2, configuredAt: new Date().toISOString(), preset: "balanced", tier: "HIGH",
     roles: legacyRoles, assignments, storageGB: general.storageGB + coding.storageGB
   }));
@@ -347,7 +347,7 @@ test("legacy version 2 snapshots supply models for newly added roles", async () 
 });
 
 test("reinstall mode backs up and replaces an invalid OpenCode config", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-repair-"));
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-repair-"));
   const file = path.join(destination, "opencode.json");
   await writeFile(file, "{ damaged");
   const result = await installConfiguration(destination, recommend((await loadCatalogue()).models, hardware), { recoverInvalidConfig: true });
@@ -358,13 +358,13 @@ test("reinstall mode backs up and replaces an invalid OpenCode config", async ()
 });
 
 test("missing or malformed saved state fails with setup guidance", async () => {
-  const destination = await mkdtemp(path.join(os.tmpdir(), "local-coder-missing-state-"));
-  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
-  await writeFile(path.join(destination, "local-coder-state.json"), "not json");
-  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
-  await writeFile(path.join(destination, "local-coder-state.json"), JSON.stringify({
+  const destination = await mkdtemp(path.join(os.tmpdir(), "localstack-missing-state-"));
+  await assert.rejects(readSavedRecommendation(destination, []), /run localstack setup/);
+  await writeFile(path.join(destination, "localstack-state.json"), "not json");
+  await assert.rejects(readSavedRecommendation(destination, []), /run localstack setup/);
+  await writeFile(path.join(destination, "localstack-state.json"), JSON.stringify({
     version: 2, configuredAt: "today", preset: "balanced", tier: "HIGH",
     roles: { orchestrator: "valid:tag", coder: 3, researcher: "valid:tag", reviewer: "valid:tag" }
   }));
-  await assert.rejects(readSavedRecommendation(destination, []), /run local-coder setup/);
+  await assert.rejects(readSavedRecommendation(destination, []), /run localstack setup/);
 });

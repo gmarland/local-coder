@@ -26,7 +26,7 @@ function contactContract(): TaskContract {
 }
 
 async function repository(content: string): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "local-coder-contract-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "localstack-contract-"));
   await writeFile(path.join(root, "README.md"), content);
   return root;
 }

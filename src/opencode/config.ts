@@ -66,7 +66,7 @@ export async function planInstallation(destination: string, recommendation: Reco
     { path: configPath, content: `${JSON.stringify(generateConfig(existing, recommendation), null, 2)}\n` },
     ...roles.map(role => ({ path: path.join(destination, "agents", `${role}.md`), content: generateAgent(role, recommendation) })),
     { path: path.join(destination, "AGENTS.md"), content: generalInstructions },
-    { path: path.join(destination, "local-coder-state.json"), content: `${JSON.stringify(state, null, 2)}\n` }
+    { path: path.join(destination, "localstack-state.json"), content: `${JSON.stringify(state, null, 2)}\n` }
   ];
   const files = await Promise.all(contents.map(async file => ({ ...file,
     original: file.path === configPath ? originalConfig : existsSync(file.path) ? await readFile(file.path, "utf8") : null })));

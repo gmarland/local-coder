@@ -4,7 +4,7 @@ import { configuredContext } from "./config.js";
 
 export function contextModelTag(model: Model): string {
   const hash = createHash("sha256").update(model.ollamaModel).digest("hex").slice(0, 12);
-  return `local-coder-${hash}:ctx${configuredContext(model)}`;
+  return `localstack-${hash}:ctx${configuredContext(model)}`;
 }
 
 // Ollama's OpenAI-compatible endpoint cannot set num_ctx per request. Use a

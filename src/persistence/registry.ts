@@ -8,7 +8,7 @@ interface Registry { version: 1; scopes: Record<string, Scope>; managed: Record<
 export function registryPath(): string {
   const root = process.env.XDG_DATA_HOME || (process.env.HOME && path.join(process.env.HOME, ".local", "share"));
   if (!root) throw new Error("HOME or XDG_DATA_HOME is required for model ownership tracking");
-  return path.join(root, "local-coder", "registry.json");
+  return path.join(root, "localstack", "registry.json");
 }
 export async function readRegistry(file = registryPath()): Promise<Registry> {
   if (!existsSync(file)) return { version: 1, scopes: {}, managed: {} };
