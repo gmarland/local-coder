@@ -50,7 +50,11 @@ test("delegation probe requires a structured task call selecting coder", async (
     const body = JSON.parse(String(init?.body));
     assert.equal(body.tools[0].function.name, "task");
     assert.ok(body.tools[0].function.parameters.properties.task_id);
-    assert.match(body.messages[1].content, /Update the README/);
+    assert.match(body.messages[0].content, /request is fully specified/);
+    assert.match(body.messages[1].content, /README\.md/);
+    assert.match(body.messages[1].content, /## Installation/);
+    assert.match(body.messages[1].content, /## Install/);
+    assert.match(body.messages[1].content, /Make no other changes/);
     return jsonResponse({ choices: [{ message: { tool_calls: [{ function: {
       name: "task", arguments: JSON.stringify({ subagent_type: "coder", description: "Edit README", prompt: "Update the README installation instructions." })
     } }] } }] });

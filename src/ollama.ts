@@ -128,9 +128,11 @@ export async function probeDelegation(model: string, request: FetchLike = fetch)
       method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(120000),
       body: JSON.stringify({
         model, stream: false, temperature: 0, max_tokens: 512,
+        // A concrete change keeps legitimate clarification behaviour from
+        // being mistaken for an inability to delegate repository edits.
         messages: [
-          { role: "system", content: "You are a read-only coding orchestrator. For repository changes, call the task tool with the correct specialist. Never tell the user to call a specialist." },
-          { role: "user", content: "Update the README installation instructions in this repository. Delegate the edit now." }
+          { role: "system", content: "You are a read-only coding orchestrator. For repository changes, call the task tool with the correct specialist. The repository is already open and the request is fully specified. You cannot inspect or edit files yourself. Never ask the user to call a specialist." },
+          { role: "user", content: "In README.md, replace the exact Markdown heading ## Installation with ## Install. Make no other changes. The request is complete; delegate this edit now." }
         ],
         tools: [{ type: "function", function: {
           name: "task", description: "Launch a specialist agent to perform a task.",
