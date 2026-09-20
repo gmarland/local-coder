@@ -1,47 +1,77 @@
 # local-coder
 
-`local-coder` configures [OpenCode](https://opencode.ai) to use local, tool-capable models through [Ollama](https://ollama.com). It detects the machine, recommends a small role-based model set, lets the developer customise it, downloads only after confirmation, and validates the result.
+Run [OpenCode](https://opencode.ai) with a hardware-matched team of local coding agents.
 
-Setup is local-only: the CLI does not upload prompts, source code, hardware details, or telemetry. Generated OpenCode configuration is ordinary JSON and Markdown. When OpenCode's researcher uses web tools, its search queries and fetched URLs go to the configured web service.
+`local-coder` detects your available memory, GPU, and disk space; recommends suitable [Ollama](https://ollama.com) models for seven specialist roles; installs a guarded OpenCode workflow; and verifies that the models can actually use tools, edit files, and check their work before declaring setup complete.
+
+It is for developers who want agentic coding without sending their repository or prompts to a hosted model provider.
+
+- **Fits the machine.** Recommendations account for RAM or VRAM, free disk, model context, role suitability, and a chosen speed/quality preset.
+- **Proves the setup works.** Live probes exercise structured tool calls, repository editing, delegation, verification, and review—not just model availability.
+- **Protects existing configuration.** Setup merges JSON or JSONC, preserves unrelated settings, previews every write, and refuses unsafe or ambiguous changes.
+- **Stays reversible.** Ownership records let uninstall restore previous files and remove only models attributable to that setup and unused elsewhere.
+
+## What to expect
+
+Setup takes the machine from hardware detection to a tested OpenCode configuration:
+
+```text
+Detect hardware and installed tools
+  → recommend models for seven agent roles
+  → preview downloads, context variants, and file changes
+  → confirm and download missing models
+  → run model and end-to-end OpenCode probes
+  → write configuration and print the exact launch command
+```
+
+A dry run shows the recommendation and complete installation plan without downloading models or writing files:
+
+```sh
+local-coder --dry-run
+```
+
+The resulting OpenCode environment uses an orchestrator, explorer, planner, coder, verifier, researcher, and reviewer. A single model may serve several roles, so storage is deduplicated.
 
 ## Requirements
 
-- Node.js 20 or newer
-- Ollama (for downloading and running models)
-- OpenCode
+- macOS or Linux
+- [Node.js](https://nodejs.org) 20 or newer
+- [Ollama](https://ollama.com/download), running when models need to be downloaded or tested
+- [OpenCode](https://opencode.ai/docs) for the generated coding environment
+- At least about 9 GB of usable model memory and 11 GB of free disk for the smallest bundled option; more capable presets need more
 
-The wizard detects missing tools and explains what remains to install. Git and ripgrep are also reported because they materially improve a coding-agent workflow.
+Git and [ripgrep](https://github.com/BurntSushi/ripgrep) are recommended because they materially improve coding-agent workflows. The wizard detects missing tools and explains what remains to install.
 
-## Install and run
+## Quick start
+
+Install from this repository:
 
 ```sh
+git clone https://github.com/gmarland/local-coder.git
+cd local-coder
 npm install
 npm link
-setup-ai
+local-coder --dry-run
+local-coder
 ```
 
-The package exposes both `setup-ai` and `local-coder`. Without a command, setup runs. Configuration is global by default (`~/.config/opencode`) or project-local with `--project`:
+Review the dry-run output before starting setup. The interactive wizard shows the exact model downloads and file changes, then asks for confirmation. When setup finishes, run the `opencode /path/to/project` command it prints.
+
+The package also exposes `setup-ai` as an alias. Running either command without a subcommand starts setup.
+
+## Scope and presets
+
+Configuration is global by default in `~/.config/opencode`. Use `--project` to write `<project>/.opencode` instead:
 
 ```sh
-local-coder
-local-coder --project
-local-coder --project /path/to/repository
-local-coder configure
-local-coder reinstall
-local-coder uninstall --dry-run
-local-coder uninstall
-local-coder uninstall --project /path/to/repository
-local-coder status
-local-coder models
+local-coder                         # configure the global OpenCode environment
+local-coder --project               # configure the current project
+local-coder --project /path/to/repo # configure a specific project
 ```
 
-`reinstall` rebuilds the OpenCode configuration and agent files from the last saved selection. It does not download, replace, test, or remove any Ollama models. Use `--project` to restore a project-local setup, and add `--dry-run` to preview the files and assignments without writing anything.
+The available presets are `balanced`, `quality`, `fast`, and `minimal`. The interactive custom flow can assign a different compatible model to every role or accept a manually entered Ollama tag. The `minimal` preset reuses one model for all seven roles.
 
-`uninstall` removes the setup in the selected scope. It restores files that existed before setup, removes files local-coder created, and deletes Ollama models that local-coder downloaded or created for that scope once no other local-coder scope uses them. It preserves models that were already installed, shared models, unrelated OpenCode settings, and user edits made after setup. Preview the removal plan with `--dry-run`; use `--yes` for automation. Ollama must be running to remove models. If it is unavailable, rerun `uninstall` when it is running.
-
-Setup records file ownership in `local-coder-ownership.json` beside the generated config and model ownership in `${XDG_DATA_HOME:-~/.local/share}/local-coder/registry.json`. These records let uninstall identify what it may remove. Older setups without an ownership record can have exactly matching generated agent files removed, but their prior config and model ownership cannot be reconstructed reliably. Uninstall reports those items for manual review. Timestamped backups are retained because they may contain user files.
-
-Useful automation and preview options:
+Useful non-interactive and preview combinations include:
 
 ```sh
 local-coder --dry-run --yes --preset balanced
@@ -49,16 +79,46 @@ local-coder --yes --preset minimal --no-pull
 local-coder --yes --backup
 ```
 
-Presets are `balanced`, `quality`, `fast`, and `minimal`. The interactive custom flow allows a different compatible model for every role or a manually entered Ollama tag. A single model may serve several roles; downloads and storage estimates are deduplicated.
+`--no-pull` skips downloads and creates context variants only from models already present. `--skip-validation` bypasses inference and runtime probes with a prominent warning; it should be reserved for cases where those checks cannot run.
 
-An independently distributed compatible catalogue can be selected with `--catalog /path/to/models.json`; the bundled catalogue always remains the offline fallback.
+## How the agents work
+
+The orchestrator is OpenCode's primary, user-facing agent. It chooses the smallest workflow appropriate to the request:
+
+```text
+Trivial:  Coder → Verifier
+Standard: Explorer → Coder → Verifier
+Complex:  Explorer → Planner → Coder → Verifier → Reviewer
+Domain:   Explorer + Researcher → Planner → Coder → Verifier → Reviewer
+```
+
+The explorer locates relevant repository context, and the planner converts that context and any external research into an implementation plan. The coder makes the smallest necessary change and runs focused then broader validation. The verifier independently inspects repository state and test evidence instead of trusting the coder's success claim. Complex and domain work also receives a final review of the actual diff and verifier evidence.
+
+Every repository change gets a versioned JSON task contract containing the original request, allowed paths, protected values, expected and forbidden outcomes, preservation requirements, test obligations, argv-based validation commands, and a repair budget. The same contract is supplied to the coder and verifier. A change is complete only after verifier `PASS`; otherwise the orchestrator issues a narrow repair request and reports any discrepancy that remains after the repair budget is exhausted.
+
+**Agent claims are not evidence. Repository state determines success.**
+
+## Privacy and safety
+
+Model inference, prompts, source code, hardware details, and telemetry stay on the machine by default. `local-coder` talks to Ollama through its local API and does not upload that data. Network access is still used when installing dependencies or asking Ollama to download model weights. If the optional researcher uses configured web tools, its search queries and fetched URLs go to that web service.
+
+Before changing configuration, setup shows:
+
+- the exact models and estimated download size;
+- the local context variants it will create;
+- every file it plans to write; and
+- warnings about missing tools, memory pressure, or insufficient disk.
+
+Setup then checks model responses, loaded context, advertised tool support, and real structured tool calls. It requires the coder to modify and reread a temporary file, the verifier to reject a seeded regression, the reviewer to identify a seeded path-traversal defect, and the orchestrator to delegate a real temporary README correction through a legal workflow trace. When the required models and OpenCode runtime are available, a failed live probe blocks configuration from being written; an unavailable dependency instead produces an incomplete-setup warning and a command to rerun configuration.
+
+Role permissions provide another boundary: the orchestrator can search but cannot edit or run commands; only the coder can edit; the verifier can validate but cannot edit or commit; and the remaining specialists are read-only. Pushes and external-directory access are denied. Repository files, comments, fixtures, and command output are treated as untrusted data rather than instructions.
 
 ## What setup writes
 
-The selected scope receives:
+The selected global or project-local scope receives:
 
 ```text
-opencode.json
+opencode.json (or an existing opencode.jsonc)
 AGENTS.md
 agents/
   orchestrator.md
@@ -72,26 +132,35 @@ local-coder-state.json
 local-coder-ownership.json
 ```
 
-Existing JSON/JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Interactive setup asks whether to create timestamped backups before replacing existing generated files and defaults to overwriting without backups. Automated `--yes` runs also overwrite without backups unless `--backup` is supplied. Invalid existing configuration causes setup to stop without overwriting it.
+Existing JSON or JSONC configuration is merged. Unrelated providers, MCP servers, plugins, and instructions are preserved. Invalid existing configuration causes setup to stop without overwriting it. Interactive setup offers timestamped backups before replacing generated files; automated `--yes` runs create backups only when `--backup` is supplied.
 
-The orchestrator is OpenCode's primary, user-facing agent. It selects a workflow according to the request:
+OpenCode edits the directory it is launched against. Setup prints an explicit `opencode /path/to/project` command, using the Git repository root when appropriate. Launch with that printed path; a separate OpenCode session started from a nested directory may choose a different active location.
 
-```text
-Trivial:  Coder → Verifier
-Standard: Explorer → Coder → Verifier
-Complex:  Explorer → Planner → Coder → Verifier → Reviewer
-Domain:   Explorer + Researcher → Planner → Coder → Verifier → Reviewer
+## Reinstall, inspect, and uninstall
+
+```sh
+local-coder status
+local-coder models
+local-coder reinstall --dry-run
+local-coder reinstall
+local-coder uninstall --dry-run
+local-coder uninstall
+local-coder uninstall --project /path/to/repository
 ```
 
-The explorer summarizes relevant repository context; the planner turns that and any research into an implementation plan. For every repository change, the orchestrator creates one versioned JSON task contract containing the original request, allowed paths, path-scoped protected values, expected and forbidden outcomes, preservation requirements, test obligations, argv-based validation commands, and the repair budget. The exact same JSON is repeated in every coder and verifier call.
+`reinstall` reconstructs configuration and agent files from the last saved selection. It does not download, replace, test, or remove Ollama models.
 
-The coder establishes a baseline, locates and reads files, makes the smallest necessary edit, rereads the result, checks changed-path scope and git diff, and runs focused then broader validation. Behaviour changes require a regression test or a specific reason why no test applies. An already-satisfied request is reported as `NO_CHANGE`; it does not trigger a meaningless edit. The independent verifier ignores the coder's success claim and combines deterministic evidence—scope, protected values, file presence or absence, exact contents or hashes, JSON values, tests, typecheck, lint, or build—with semantic inspection. For complex and domain work, the reviewer receives the actual diff and verifier evidence, then looks for defects beyond test results.
+`uninstall` restores files that existed before setup, removes files created by `local-coder`, and deletes models downloaded or created for that scope only when no other `local-coder` scope uses them. It preserves pre-existing and shared models, unrelated OpenCode settings, and user edits made after setup. Preview the plan with `--dry-run`; use `--yes` for automation. Ollama must be running to remove models.
 
-Verifier failure produces a narrow repair request containing expected and observed state. The orchestrator may send it back to the coder for at most two remediation attempts, verifying after each one. Substantive review findings allow one review remediation pass followed by verification. A modification is complete only after verifier PASS; exhausted repairs are reported with the unresolved discrepancy. The user does not need to switch agents. **AGENT CLAIMS ARE NOT EVIDENCE. REPOSITORY STATE DETERMINES SUCCESS.**
+File ownership is recorded in `local-coder-ownership.json` beside the generated configuration. Cross-scope model ownership is stored in `${XDG_DATA_HOME:-~/.local/share}/local-coder/registry.json`. Older installations without ownership records are handled conservatively and may leave files or models for manual review. Timestamped backups are always retained because they may contain user data.
 
-The orchestrator can read and search but cannot edit files or run shell commands. The coder can edit; routine repository inspection and npm validation commands are pre-approved, other shell commands require approval, and pushes are denied. The verifier has the same narrow validation access but cannot edit or commit. Explorer, planner, and researcher can only read and search; researcher also has web tools. The reviewer may run only read-only git status/diff/show commands. Every role is denied external-directory access. Repository source, comments, fixtures, and command output are treated as untrusted data rather than instructions.
+## Model selection and advanced use
 
-Automation can use the deterministic completion gate directly:
+The versioned [`catalog/models.json`](catalog/models.json) records Ollama tags, storage and memory budgets, supported roles, context limits, tool support, speed and quality weights, and explanatory notes. Recommendation logic in [`src/models/recommend.ts`](src/models/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Context variants use 16K, 24K, or 32K tokens according to the detected hardware tier, capped by each model's supported limit, and share the original model weights.
+
+An independently distributed compatible catalogue can be selected with `--catalog /path/to/models.json`; the bundled catalogue remains the offline fallback. The provider boundary is isolated in [`src/ollama.ts`](src/ollama.ts), making another OpenAI-compatible local backend possible in the future without changing recommendation logic.
+
+Automation can invoke the deterministic completion gate directly:
 
 ```sh
 local-coder verify-contract contract.json --root /path/to/repository --changed src/file.ts
@@ -99,36 +168,17 @@ local-coder verify-contract contract.json --root /path/to/repository --changed s
 
 It exits unsuccessfully on any discrepancy. Validation commands are executable-plus-argv objects and run without a shell. Optional `--baseline baseline.json` supplies pre-edit contents for values whose rule is `unchanged`.
 
-## Recommendation design
-
-The bundled, versioned [`catalog/models.json`](catalog/models.json) keeps model metadata separate from selection logic. Entries include Ollama tags, storage and memory budgets, roles, context, tool support, speed/quality weights, and explanatory notes. The bundled catalogue works fully offline and can be updated independently in a future release.
-
-Machine detection is isolated in [`src/hardware.ts`](src/hardware.ts). Recommendation logic in [`src/models/recommend.ts`](src/models/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Recommended-memory figures include practical headroom beyond quantised model weight; minimum-memory values are used only by the explicitly quality-maximising preset.
-
-Models can serve several roles. Balanced and fast setups favor smaller models for exploration, verification, and research when memory permits; the minimal preset reuses one model for all seven agents. The saved selection records each assignment, and reinstall fills new roles from related assignments in older four-agent state files.
-
-The provider boundary is isolated in [`src/ollama.ts`](src/ollama.ts), allowing another OpenAI-compatible backend such as vLLM to be added without changing hardware or recommendation logic.
-
-CLI workflows live in [`src/commands/`](src/commands), model selection in [`src/models/`](src/models), OpenCode configuration and saved state in [`src/opencode/`](src/opencode), and ownership records in [`src/persistence/`](src/persistence). [`src/cli.ts`](src/cli.ts) remains the command entry point.
-
-## Safety and validation
-
-Before changing anything, setup shows the exact models, estimated download size, local context variants, and files it will write. Pulls use Ollama's own resumable downloader and visible progress. For each selected model, setup creates a local variant with a context sized to the machine tier (16K, 24K, or 32K, capped by the model's supported limit); variants share the original weights. Setup checks OpenCode state-directory access, model responses, loaded context, advertised tools, and real structured tool calls. It asks the coder to read, modify, and reread a temporary file, requires the verifier to reject a seeded regression, and requires the reviewer to identify a seeded path-traversal defect. The orchestrator must delegate a real temporary README correction. Its newline-delimited JSON trace must contain completed coder and verifier tasks in legal state-machine order and the verifier must return `STATUS: PASS`; correct file contents alone are insufficient. Exact-content inspection still rejects substitution or destructive rewriting. A failed edit or invalid workflow trace blocks installation. `--skip-validation` bypasses these inference and runtime checks with a prominent warning; `--no-pull` skips downloads and creates variants only from models already present.
-
-OpenCode edits the directory it is launched against. Setup prints an explicit `opencode /path/to/project` command. When setup runs inside a Git repository, that command uses the repository root, including when setup was invoked from its `bin` directory. A `--project` path is used as given. Starting a separate OpenCode session from a nested directory may choose a different active location; launch with the printed project path for repository edits.
-
 ## Development
 
-See [`REPO_MAP.md`](REPO_MAP.md) for module responsibilities, runtime flows, and
-the tests related to each subsystem.
+See [`REPO_MAP.md`](REPO_MAP.md) for module responsibilities, execution flows, and the tests associated with each subsystem. [`docs/orchestration-audit.md`](docs/orchestration-audit.md) records which orchestration guarantees are executable and which remain prompt-enforced.
 
 ```sh
 make build
 make test
 ```
 
-Tests cover catalogue validation, capability tiers, model-role compatibility, config generation, structured tool calls, role-specific judgement, and the README exact-literal regression. The behavioural suite checks contract hashing, changed-path scope, JSON outcomes, safe argv execution, placeholder substitution, false success claims, legal workflow transitions, repair budgets, task-trace ordering, verifier PASS, and final review. [`docs/orchestration-audit.md`](docs/orchestration-audit.md) documents the remaining boundary between executable gates and interactive prompt enforcement.
+The test suite covers catalogue validation, hardware tiers, model-role compatibility, configuration merging, structured tool calls, safe uninstall, task-contract verification, shell-free validation, legal workflow transitions, repair budgets, and end-to-end OpenCode probe interpretation.
 
-## Current format and catalogue sources
+Generated configuration follows the current [OpenCode provider documentation](https://opencode.ai/docs/providers), [agent documentation](https://opencode.ai/docs/agents), and [`default_agent` configuration](https://opencode.ai/docs/config). Catalogue choices prioritize models Ollama identifies as tool-capable and suitable for agentic work, including [Qwen 3 Coder](https://ollama.com/library/qwen3-coder), [Devstral Small 2](https://ollama.com/library/devstral-small-2), and [Qwen 3 Coder Next](https://ollama.com/library/qwen3-coder-next).
 
-The generated shape follows the current [OpenCode provider documentation](https://opencode.ai/docs/providers), [agent documentation](https://opencode.ai/docs/agents), and [`default_agent` configuration](https://opencode.ai/docs/config). Catalogue choices prioritise models that Ollama marks as supporting tools and that are intended for agentic work, including [Qwen 3 Coder](https://ollama.com/library/qwen3-coder), [Devstral Small 2](https://ollama.com/library/devstral-small-2), and [Qwen 3 Coder Next](https://ollama.com/library/qwen3-coder-next).
+Licensed under the [MIT License](LICENSE).
