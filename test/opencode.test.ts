@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadCatalogue } from "../src/models/catalogue.js";
 import { recommend } from "../src/models/recommend.js";
-import { applyInstallationPlan, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
+import { applyInstallationPlan, configuredContext, generateConfig, installConfiguration, planInstallation, readExistingConfig } from "../src/opencode/config.js";
 import { readSavedRecommendation } from "../src/opencode/saved-state.js";
 import { generalInstructions, generateAgent } from "../src/opencode/agents.js";
 import { contextModelTag, withContextModels } from "../src/opencode/context-models.js";
@@ -36,7 +36,10 @@ test("configuration generation preserves unrelated settings and providers", asyn
   assert.deepEqual(generated.instructions, ["RULES.md", "AGENTS.md"]);
   assert.equal(generated.default_agent, "orchestrator");
   const ollama = (generated.provider as { ollama: { models: Record<string, { limit: { context: number; output: number } }> } }).ollama;
-  assert.deepEqual(ollama.models[setup.assignments.coder.ollamaModel].limit, { context: 32768, output: 8192 });
+  assert.deepEqual(ollama.models[setup.assignments.coder.ollamaModel].limit, { context: 65536, output: 8192 });
+  const reasoningModel = setup.uniqueModels.find(model => model.reasoningField)!;
+  assert.deepEqual((ollama.models[reasoningModel.ollamaModel] as unknown as { compatibility: object }).compatibility,
+    { reasoningField: "reasoning" });
 });
 
 test("context variants keep role assignments consistent and advertise their actual target", async () => {
@@ -44,12 +47,12 @@ test("context variants keep role assignments consistent and advertise their actu
   const configured = withContextModels(setup);
   const source = setup.assignments.coder;
   assert.equal(configured.assignments.coder.ollamaModel, contextModelTag(source));
-  assert.equal(configured.assignments.coder.contextWindow, 32768);
+  assert.equal(configured.assignments.coder.contextWindow, 65536);
   assert.equal(configured.uniqueModels.length, setup.uniqueModels.length);
   assert.equal(setup.assignments.coder.ollamaModel, source.ollamaModel);
   const config = generateConfig({}, configured);
   const models = (config.provider as { ollama: { models: Record<string, { limit: { context: number } }> } }).ollama.models;
-  assert.equal(models[contextModelTag(source)].limit.context, 32768);
+  assert.equal(models[contextModelTag(source)].limit.context, 65536);
 });
 
 test("context variants reduce memory pressure on low-tier hardware", async () => {
@@ -59,10 +62,19 @@ test("context variants reduce memory pressure on low-tier hardware", async () =>
   const source = setup.assignments.coder;
   assert.equal(setup.tier, "LOW");
   assert.equal(configured.assignments.coder.ollamaModel, contextModelTag(source, "LOW"));
-  assert.equal(configured.assignments.coder.contextWindow, 16384);
+  assert.equal(configured.assignments.coder.contextWindow, 32768);
   const config = generateConfig({}, configured);
   const models = (config.provider as { ollama: { models: Record<string, { limit: { context: number } }> } }).ollama.models;
-  assert.equal(models[contextModelTag(source, "LOW")].limit.context, 16384);
+  assert.equal(models[contextModelTag(source, "LOW")].limit.context, 32768);
+});
+
+test("context caps scale across every hardware tier and respect model limits", () => {
+  const longContext = { contextWindow: 262144 };
+  assert.equal(configuredContext(longContext, "LOW"), 32768);
+  assert.equal(configuredContext(longContext, "MEDIUM"), 65536);
+  assert.equal(configuredContext(longContext, "HIGH"), 65536);
+  assert.equal(configuredContext(longContext, "VERY_HIGH"), 131072);
+  assert.equal(configuredContext({ contextWindow: 40960 }, "VERY_HIGH"), 40960);
 });
 
 test("generated project guidance makes verification the completion gate", () => {

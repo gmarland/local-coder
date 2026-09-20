@@ -1,96 +1,206 @@
 {
-  "schemaVersion": 1,
-  "updated": "2026-09-16",
+  "schemaVersion": 2,
+  "updated": "2026-09-20",
   "models": [
     {
-      "id": "qwen3-8b",
-      "name": "Qwen 3 8B",
-      "ollamaModel": "qwen3:8b",
+      "id": "rnj-1-8b", "name": "RNJ-1 8B", "ollamaModel": "rnj-1:8b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 9, "recommendedMemoryGB": 16, "storageGB": 5.1, "contextWindow": 32768,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 7,
+      "minimumOllamaVersion": "0.13.3",
+      "notes": "Compact code model with native tool use; requires Ollama 0.13.3+."
+    },
+    {
+      "id": "ornith-9b", "name": "Ornith 9B", "ollamaModel": "ornith:9b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 10, "recommendedMemoryGB": 16, "storageGB": 5.6, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 8,
+      "notes": "Small agentic coding model with a long context window."
+    },
+    {
+      "id": "qwen3-8b", "name": "Qwen 3 8B", "ollamaModel": "qwen3:8b",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
-      "minimumMemoryGB": 9,
-      "recommendedMemoryGB": 18,
-      "storageGB": 5.2,
-      "contextWindow": 40960,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 7,
-      "quality": 6,
+      "minimumMemoryGB": 9, "recommendedMemoryGB": 18, "storageGB": 5.2, "contextWindow": 40960,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 6,
       "notes": "Balanced general reasoning and tool use for modest hardware."
     },
     {
-      "id": "gpt-oss-20b",
-      "name": "GPT-OSS 20B",
-      "ollamaModel": "gpt-oss:20b",
+      "id": "qwen3.5-9b", "name": "Qwen 3.5 9B", "ollamaModel": "qwen3.5:9b",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
-      "minimumMemoryGB": 20,
-      "recommendedMemoryGB": 32,
-      "storageGB": 14.0,
-      "contextWindow": 131072,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 7,
-      "quality": 8,
+      "minimumMemoryGB": 12, "recommendedMemoryGB": 18, "storageGB": 6.6, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 7,
+      "notes": "Compact generalist with tools, thinking, and a 256K context window."
+    },
+    {
+      "id": "gemma4-12b", "name": "Gemma 4 12B", "ollamaModel": "gemma4:12b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 13, "recommendedMemoryGB": 20, "storageGB": 7.6, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 7,
+      "notes": "Efficient general-purpose model with native tools and long context."
+    },
+    {
+      "id": "gpt-oss-20b", "name": "GPT-OSS 20B", "ollamaModel": "gpt-oss:20b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 20, "recommendedMemoryGB": 32, "storageGB": 14.0, "contextWindow": 131072,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 8,
       "notes": "Strong open-weight reasoning and agentic generalist."
     },
     {
-      "id": "devstral-small-2",
-      "name": "Devstral Small 2 24B",
-      "ollamaModel": "devstral-small-2:24b",
+      "id": "devstral-small-2", "name": "Devstral Small 2 24B", "ollamaModel": "devstral-small-2:24b",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
-      "minimumMemoryGB": 22,
-      "recommendedMemoryGB": 36,
-      "storageGB": 15.0,
-      "contextWindow": 393216,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 6,
-      "quality": 9,
-      "notes": "Purpose-built for multi-file software-engineering agents. Requires Ollama 0.13.3+."
+      "minimumMemoryGB": 22, "recommendedMemoryGB": 36, "storageGB": 15.0, "contextWindow": 393216,
+      "toolCalling": true, "agenticCoding": true, "speed": 6, "quality": 9,
+      "minimumOllamaVersion": "0.13.3",
+      "notes": "Purpose-built for multi-file software-engineering agents; requires Ollama 0.13.3+."
     },
     {
-      "id": "qwen3-coder-30b",
-      "name": "Qwen 3 Coder 30B-A3B",
-      "ollamaModel": "qwen3-coder:30b",
+      "id": "qwen3.6-27b-coding", "name": "Qwen 3.6 27B Coding", "ollamaModel": "qwen3.6:27b-coding",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 26, "recommendedMemoryGB": 40, "storageGB": 18.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 9,
+      "reasoningField": "reasoning",
+      "notes": "Fast coding-tuned Qwen model with interleaved reasoning and tools."
+    },
+    {
+      "id": "qwen3.8-27b", "name": "Qwen 3.8 27B", "ollamaModel": "qwen3.8:27b",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
-      "minimumMemoryGB": 26,
-      "recommendedMemoryGB": 40,
-      "storageGB": 19.0,
-      "contextWindow": 262144,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 7,
-      "quality": 9,
+      "minimumMemoryGB": 26, "recommendedMemoryGB": 40, "storageGB": 18.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 10,
+      "reasoningField": "reasoning",
+      "notes": "High-quality generalist with long context, reasoning, and tool use."
+    },
+    {
+      "id": "muse-glimmer-30b", "name": "Muse Glimmer 30B", "ollamaModel": "muse-glimmer:30b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 26, "recommendedMemoryGB": 40, "storageGB": 18.0, "contextWindow": 131072,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 9,
+      "reasoningField": "reasoning",
+      "notes": "Tool-capable generalist tuned for agentic workflows and reasoning."
+    },
+    {
+      "id": "gemma4-26b", "name": "Gemma 4 26B", "ollamaModel": "gemma4:26b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 27, "recommendedMemoryGB": 40, "storageGB": 19.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 8,
+      "notes": "Balanced Gemma generalist for tool-driven local development."
+    },
+    {
+      "id": "north-mini-code-1.0", "name": "North Mini Code 1.0", "ollamaModel": "north-mini-code-1.0:q4_K_M",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 27, "recommendedMemoryGB": 40, "storageGB": 19.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 9,
+      "reasoningField": "reasoning",
+      "notes": "Coding agent model with native tool use and interleaved reasoning."
+    },
+    {
+      "id": "gemma4-31b", "name": "Gemma 4 31B", "ollamaModel": "gemma4:31b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 28, "recommendedMemoryGB": 42, "storageGB": 20.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 6, "quality": 9,
+      "notes": "Largest standard Gemma 4 variant for high-quality local general work."
+    },
+    {
+      "id": "laguna-xs-2.1", "name": "Laguna XS 2.1", "ollamaModel": "laguna-xs-2.1:q4_K_M",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 30, "recommendedMemoryGB": 40, "storageGB": 20.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 9,
+      "platforms": ["linux"], "reasoningField": "reasoning",
+      "notes": "Efficient Poolside coding agent; currently Linux-only because the Ollama build is not reliable on Metal."
+    },
+    {
+      "id": "ornith-35b", "name": "Ornith 35B", "ollamaModel": "ornith:35b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 30, "recommendedMemoryGB": 44, "storageGB": 21.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 9,
+      "notes": "Larger purpose-trained agentic coder with a long context window."
+    },
+    {
+      "id": "qwen3-coder-30b", "name": "Qwen 3 Coder 30B-A3B", "ollamaModel": "qwen3-coder:30b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 26, "recommendedMemoryGB": 40, "storageGB": 19.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 9,
       "notes": "Efficient MoE model trained for long-horizon agentic coding."
     },
     {
-      "id": "glm-4.7-flash",
-      "name": "GLM 4.7 Flash",
-      "ollamaModel": "glm-4.7-flash:q4_K_M",
+      "id": "qwen3.6-35b-coding", "name": "Qwen 3.6 35B Coding", "ollamaModel": "qwen3.6:35b-coding",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 31, "recommendedMemoryGB": 44, "storageGB": 23.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 8, "quality": 10,
+      "reasoningField": "reasoning",
+      "notes": "High-quality coding model with efficient activation, tools, and interleaved reasoning."
+    },
+    {
+      "id": "glm-4.7-flash", "name": "GLM 4.7 Flash", "ollamaModel": "glm-4.7-flash:q4_K_M",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
-      "minimumMemoryGB": 27,
-      "recommendedMemoryGB": 42,
-      "storageGB": 19.0,
-      "contextWindow": 202752,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 7,
-      "quality": 9,
+      "minimumMemoryGB": 27, "recommendedMemoryGB": 42, "storageGB": 19.0, "contextWindow": 202752,
+      "toolCalling": true, "agenticCoding": true, "speed": 7, "quality": 9,
+      "minimumOllamaVersion": "0.14.3",
       "notes": "Fast 30B-A3B reasoning model with strong tools; requires Ollama 0.14.3+."
     },
     {
-      "id": "qwen3-coder-next",
-      "name": "Qwen 3 Coder Next 80B-A3B",
-      "ollamaModel": "qwen3-coder-next:q4_K_M",
+      "id": "qwen3-coder-next", "name": "Qwen 3 Coder Next 80B-A3B", "ollamaModel": "qwen3-coder-next:q4_K_M",
       "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
-      "minimumMemoryGB": 60,
-      "recommendedMemoryGB": 80,
-      "storageGB": 52.0,
-      "contextWindow": 262144,
-      "toolCalling": true,
-      "agenticCoding": true,
-      "speed": 5,
-      "quality": 10,
+      "minimumMemoryGB": 60, "recommendedMemoryGB": 80, "storageGB": 52.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 5, "quality": 10,
       "notes": "Large local agentic coder for very-high-memory machines."
+    },
+    {
+      "id": "gpt-oss-120b", "name": "GPT-OSS 120B", "ollamaModel": "gpt-oss:120b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 80, "recommendedMemoryGB": 96, "storageGB": 65.0, "contextWindow": 131072,
+      "toolCalling": true, "agenticCoding": true, "speed": 5, "quality": 9,
+      "notes": "Large open-weight general reasoning model with native tool use."
+    },
+    {
+      "id": "devstral-2-123b", "name": "Devstral 2 123B", "ollamaModel": "devstral-2:123b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 88, "recommendedMemoryGB": 112, "storageGB": 75.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 4, "quality": 9,
+      "notes": "Full-size Devstral software-engineering agent for large-memory systems."
+    },
+    {
+      "id": "mistral-medium-3.5-128b", "name": "Mistral Medium 3.5 128B", "ollamaModel": "mistral-medium-3.5:128b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 94, "recommendedMemoryGB": 128, "storageGB": 80.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 4, "quality": 10,
+      "notes": "Large generalist with strong software-engineering and tool-use performance."
+    },
+    {
+      "id": "qwen3.5-122b", "name": "Qwen 3.5 122B", "ollamaModel": "qwen3.5:122b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 96, "recommendedMemoryGB": 128, "storageGB": 81.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 5, "quality": 10,
+      "notes": "Large Qwen generalist for high-quality reasoning, research, and coding."
+    },
+    {
+      "id": "nemotron-3-super-120b", "name": "Nemotron 3 Super 120B", "ollamaModel": "nemotron-3-super:120b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 100, "recommendedMemoryGB": 128, "storageGB": 87.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 6, "quality": 9,
+      "notes": "Sparse large model with strong agentic coding and tool-use results."
+    },
+    {
+      "id": "laguna-s-2.1", "name": "Laguna S 2.1", "ollamaModel": "laguna-s-2.1:q4_K_M",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "review"],
+      "minimumMemoryGB": 128, "recommendedMemoryGB": 160, "storageGB": 96.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 5, "quality": 10,
+      "reasoningField": "reasoning",
+      "notes": "Large Poolside coding agent with native tools and interleaved reasoning."
+    },
+    {
+      "id": "qwen3.8-flash-next-125b", "name": "Qwen 3.8 Flash Next 125B-A6B", "ollamaModel": "qwen3.8-flash-next:125b-a6b-q4_K_M",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 144, "recommendedMemoryGB": 192, "storageGB": 120.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 5, "quality": 10,
+      "supportStatus": "experimental", "reasoningField": "reasoning",
+      "notes": "Experimental preview; available only through the explicit custom picker."
+    },
+    {
+      "id": "qwen3-coder-480b", "name": "Qwen 3 Coder 480B-A35B", "ollamaModel": "qwen3-coder:480b",
+      "roles": ["orchestrator", "exploration", "planning", "coding", "verification", "research", "review"],
+      "minimumMemoryGB": 250, "recommendedMemoryGB": 320, "storageGB": 290.0, "contextWindow": 262144,
+      "toolCalling": true, "agenticCoding": true, "speed": 3, "quality": 10,
+      "notes": "Full Qwen coding flagship; Ollama documents 250 GB as the minimum memory."
     }
   ]
 }

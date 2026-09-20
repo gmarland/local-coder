@@ -1,36 +1,53 @@
 # local-coder
 
-Run [OpenCode](https://opencode.ai) with a hardware-matched team of local coding agents.
+**Turn the models your machine can run into a private, verified team of coding agents.**
 
-`local-coder` detects your available memory, GPU, and disk space; recommends suitable [Ollama](https://ollama.com) models for seven specialist roles; installs a guarded OpenCode workflow; and verifies that the models can actually use tools, edit files, and check their work before declaring setup complete.
+`local-coder` builds a local coding-agent environment on top of [Ollama](https://ollama.com) and [OpenCode](https://opencode.ai). It detects the machine, recommends models that fit, assigns them to seven specialist roles, generates a permission-restricted workflow, and tests whether the result can actually use tools, delegate work, edit a repository, and verify the edit.
 
-It is for developers who want agentic coding without sending their repository or prompts to a hosted model provider.
+Pointing OpenCode at an Ollama model gives you local inference. `local-coder` adds the system around that model: hardware-aware role assignment, adaptive orchestration, task contracts, capability probes, independent verification, and reversible configuration management.
 
-- **Fits the machine.** Recommendations account for RAM or VRAM, free disk, model context, role suitability, and a chosen speed/quality preset.
-- **Proves the setup works.** Live probes exercise structured tool calls, repository editing, delegation, verification, and review—not just model availability.
-- **Protects existing configuration.** Setup merges JSON or JSONC, preserves unrelated settings, previews every write, and refuses unsafe or ambiguous changes.
-- **Stays reversible.** Ownership records let uninstall restore previous files and remove only models attributable to that setup and unused elsewhere.
+> **Agent claims are not evidence. Repository state determines success.**
 
-## What to expect
+That principle is the project's completion rule. A model saying that it changed a file or ran a test is not enough; the generated workflow asks a separate verifier to inspect the repository and validation evidence.
 
-Setup takes the machine from hardware detection to a tested OpenCode configuration:
+## Why local-coder exists
+
+Running a model locally is relatively easy. Building a dependable local coding-agent setup raises harder questions:
+
+- Which models fit this machine's memory, GPU, disk, and useful context budget?
+- Which model should explore, plan, implement, verify, research, or review?
+- Can each selected model produce real structured tool calls, not tool-shaped text?
+- Can the coding model read, edit, and reread a file correctly?
+- Can an orchestrator delegate work, and can another agent catch a false success claim or a real defect?
+- Can all of this be added without discarding an existing OpenCode configuration or shared models?
+
+`local-coder` treats those as one setup problem. Smaller or faster models can handle lightweight roles while stronger models handle implementation and planning, when the hardware and catalogue support that split. A minimal setup can reuse one compatible model for every role.
+
+## From hardware to a verified environment
 
 ```text
 Detect hardware and installed tools
-  → recommend models for seven agent roles
-  → preview downloads, context variants, and file changes
-  → confirm and download missing models
-  → run model and end-to-end OpenCode probes
-  → write configuration and print the exact launch command
+              ↓
+Determine memory, context, and storage budgets
+              ↓
+Recommend models and assign them to roles
+              ↓
+Create local Ollama context variants
+              ↓
+Generate OpenCode agents, permissions, and config
+              ↓
+Run model and role capability probes
+              ↓
+Run a real OpenCode edit-and-verification probe
+              ↓
+Ready
 ```
 
-A dry run shows the recommendation and complete installation plan without downloading models or writing files:
+A single model may fill several roles; downloads are deduplicated by Ollama tag and context variants share the source model's weights. Before doing anything, a dry run shows the recommendation, downloads, variants, and files without writing or downloading:
 
 ```sh
 local-coder --dry-run
 ```
-
-The resulting OpenCode environment uses an orchestrator, explorer, planner, coder, verifier, researcher, and reviewer. A single model may serve several roles, so storage is deduplicated.
 
 ## Requirements
 
@@ -81,9 +98,43 @@ local-coder --yes --backup
 
 `--no-pull` skips downloads and creates context variants only from models already present. `--skip-validation` bypasses inference and runtime probes with a prominent warning; it should be reserved for cases where those checks cannot run.
 
-## How the agents work
+## The agent team
 
-The orchestrator is OpenCode's primary, user-facing agent. It chooses the smallest workflow appropriate to the request:
+The orchestrator is OpenCode's primary, user-facing agent. The other roles are specialists it can call as the work requires:
+
+```text
+                    User
+                      │
+                      ▼
+                Orchestrator
+                      │ selects a workflow
+                      ▼
+          Explorer + Researcher (as needed)
+                      │
+                      ▼
+               Planner (as needed)
+                      │
+                      ▼
+                    Coder
+                      │
+                      ▼
+                   Verifier
+                      │
+                      ▼
+             Reviewer (when required)
+```
+
+- **Orchestrator:** classifies the request, selects the workflow, creates the handoffs and task contract, and owns retries and completion.
+- **Explorer:** finds the relevant files, symbols, execution flow, conventions, and tests without editing.
+- **Planner:** turns repository and research findings into ordered implementation and validation guidance.
+- **Researcher:** uses configured web tools for current documentation or domain evidence; it is not invoked for ordinary repository work.
+- **Coder:** makes the repository change, rereads it, inspects the diff, and runs proportionate validation.
+- **Verifier:** independently checks repository state, contract outcomes, scope, protected values, and test evidence; it cannot edit.
+- **Reviewer:** examines significant verified changes for defects, regressions, security issues, and missing tests.
+
+### Adaptive workflows
+
+The orchestrator is instructed to choose the least costly workflow that covers a repository change rather than invoking every role every time:
 
 ```text
 Trivial:  Coder → Verifier
@@ -92,28 +143,55 @@ Complex:  Explorer → Planner → Coder → Verifier → Reviewer
 Domain:   Explorer + Researcher → Planner → Coder → Verifier → Reviewer
 ```
 
-The explorer locates relevant repository context, and the planner converts that context and any external research into an implementation plan. The coder makes the smallest necessary change and runs focused then broader validation. The verifier independently inspects repository state and test evidence instead of trusting the coder's success claim. Complex and domain work also receives a final review of the actual diff and verifier evidence.
+Simple questions that do not change the repository can be answered directly. A task can move to a more involved workflow if discovery shows that it is larger than expected.
 
-Every repository change gets a versioned JSON task contract containing the original request, allowed paths, protected values, expected and forbidden outcomes, preservation requirements, test obligations, argv-based validation commands, and a repair budget. The same contract is supplied to the coder and verifier. A change is complete only after verifier `PASS`; otherwise the orchestrator issues a narrow repair request and reports any discrepancy that remains after the repair budget is exhausted.
+## Verification: behavior, not output
 
-**Agent claims are not evidence. Repository state determines success.**
+There is a material difference between **the model responded** and **the coding agent performed the requested operation**. Setup checks both model capability and observable effects:
 
-## Privacy and safety
+1. **Inference:** each selected context variant returns a valid response, and Ollama reports that the required context is actually loaded.
+2. **Tool use:** the model advertises tool support and emits a structured call to the requested tool with the exact argument. Returning JSON as ordinary assistant text does not pass.
+3. **Role behavior:** the coder must read, modify, and reread a temporary file; the orchestrator must emit a structured delegation to the coder; the verifier must reject seeded failing evidence; and the reviewer must identify a seeded path-traversal defect.
+4. **End-to-end workflow:** OpenCode is launched with the generated configuration against a temporary repository. The orchestrator must delegate a precise README edit, the file must match the expected bytes on disk, and the event trace must contain a completed coder task followed by verifier `PASS`.
 
-Model inference, prompts, source code, hardware details, and telemetry stay on the machine by default. `local-coder` talks to Ollama through its local API and does not upload that data. Network access is still used when installing dependencies or asking Ollama to download model weights. If the optional researcher uses configured web tools, its search queries and fetched URLs go to that web service.
+The final probe does not accept a successful process exit, a correct-looking response, or even a correct file by itself. The repository result and the delegated verification trace must agree. If the selected models and OpenCode are available, any failed live probe blocks configuration from being written. If a required runtime is unavailable, setup can still write an incomplete configuration, warns that it has not been validated, and gives the command to rerun setup.
 
-Before changing configuration, setup shows:
+These probes establish that the selected models and generated environment can complete a controlled workflow at setup time; they do not make arbitrary future agent work infallible. OpenCode enforces the generated role permissions, while interactive task classification and semantic contract construction still depend partly on the generated agent instructions. Automation that needs a deterministic completion decision can run `local-coder verify-contract`.
 
-- the exact models and estimated download size;
-- the local context variants it will create;
-- every file it plans to write; and
-- warnings about missing tools, memory pressure, or insufficient disk.
+## Task contracts
 
-Setup then checks model responses, loaded context, advertised tool support, and real structured tool calls. It requires the coder to modify and reread a temporary file, the verifier to reject a seeded regression, the reviewer to identify a seeded path-traversal defect, and the orchestrator to delegate a real temporary README correction through a legal workflow trace. When the required models and OpenCode runtime are available, a failed live probe blocks configuration from being written; an unavailable dependency instead produces an incomplete-setup warning and a command to rerun configuration.
+For each repository change, the generated orchestrator is instructed to create one versioned JSON task contract and pass it unchanged to the coder and verifier. A contract can record:
 
-Role permissions provide another boundary: the orchestrator can search but cannot edit or run commands; only the coder can edit; the verifier can validate but cannot edit or commit; and the remaining specialists are read-only. Pushes and external-directory access are denied. Repository files, comments, fixtures, and command output are treated as untrusted data rather than instructions.
+- allowed paths and target files;
+- exact protected values that must remain present or unchanged;
+- expected and forbidden file or JSON outcomes;
+- preservation requirements and whether tests are required;
+- validation commands as an executable plus argument array; and
+- a maximum repair count.
 
-## What setup writes
+This keeps exact user values and acceptance criteria attached to the work instead of relying on a chain of increasingly compressed natural-language summaries. A failed verification produces an evidence-based, narrowly scoped repair instruction. The generated instructions cap verification repairs at two and allow complex or domain workflows one review remediation before the final verification and review; the executable workflow controller applies the same limits when validating setup traces.
+
+The contract verifier can deterministically check file existence, absence, contents, hashes, JSON pointers, changed-path scope, protected values, and validation results. Its validation runner rejects shell strings, disallowed operations, and working directories outside the repository. Semantic requirements still require independent inspection by the verifier agent.
+
+## Privacy and permission boundaries
+
+`local-coder` itself sends Ollama requests only to `127.0.0.1`, configures OpenCode sharing as disabled unless the existing config says otherwise, and does not upload prompts, source code, hardware details, or telemetry. Installing dependencies and downloading model weights still use the network. If the researcher uses configured web tools, its queries and fetched URLs go to that external service.
+
+Role permissions limit the impact of a confused model:
+
+- the orchestrator can read, search, and delegate, but cannot edit or run shell commands;
+- only the coder can edit, and `git push` is denied;
+- the verifier can read and run approved validation commands, but cannot edit, commit, or push;
+- the explorer, planner, and researcher are read-only, while the reviewer has only read-only Git inspection commands; and
+- external-directory access is denied for every role.
+
+Repository files, comments, fixtures, and command output are treated as untrusted data rather than instructions.
+
+## Safe, reversible installation
+
+Before changing configuration, setup shows the models and estimated download size, local context variants, every file it plans to write, and any tool, memory-pressure, or disk warnings. The plan is built before confirmation and setup refuses to apply it if a target file changes after the preview.
+
+### What setup writes
 
 The selected global or project-local scope receives:
 
@@ -154,9 +232,29 @@ local-coder uninstall --project /path/to/repository
 
 File ownership is recorded in `local-coder-ownership.json` beside the generated configuration. Cross-scope model ownership is stored in `${XDG_DATA_HOME:-~/.local/share}/local-coder/registry.json`. Older installations without ownership records are handled conservatively and may leave files or models for manual review. Timestamped backups are always retained because they may contain user data.
 
-## Model selection and advanced use
+## Hardware-aware model selection
 
-The versioned [`catalog/models.json`](catalog/models.json) records Ollama tags, storage and memory budgets, supported roles, context limits, tool support, speed and quality weights, and explanatory notes. Recommendation logic in [`src/models/recommend.ts`](src/models/recommend.ts) considers unified memory or NVIDIA VRAM, free disk, role suitability, and preset intent. Context variants use 16K, 24K, or 32K tokens according to the detected hardware tier, capped by each model's supported limit, and share the original model weights.
+`local-coder` recommends a configuration; it does not benchmark every possible combination or claim to find an objectively best model. Its hardware checks and recommendation logic consider:
+
+- total system memory, including unified memory on Apple silicon, with currently available memory used for pressure warnings;
+- NVIDIA VRAM on Linux, combined with a limited host-memory allowance for fit calculations;
+- free disk space, including a 5 GB reserve after model downloads;
+- each model's supported roles, context window, tool-calling flag, and agentic-coding flag;
+- operating-system restrictions, known minimum Ollama versions, and experimental support status; and
+- the selected `balanced`, `quality`, `fast`, or `minimal` preference.
+
+Lightweight exploration, verification, and research roles are scored differently from core orchestration, planning, coding, and review roles. Different roles may therefore receive different models, while `minimal` requires one model compatible with all seven roles. Context variants use 32K, 64K, or 128K tokens according to the hardware tier, capped by each model's supported limit, and share the source model's weights.
+
+The versioned [`catalog/models.json`](catalog/models.json) records the Ollama tags and metadata used for those decisions, including storage and memory budgets, supported roles, context limits, tool support, speed and quality weights, platform restrictions, minimum Ollama versions, reasoning-field compatibility, and support status.
+
+The bundled schema-v2 catalogue contains 27 canonical local tags, current to 20 September 2026:
+
+- Compact: `rnj-1:8b`, `ornith:9b`, `qwen3:8b`, `qwen3.5:9b`, `gemma4:12b`.
+- Workstation: `gpt-oss:20b`, `devstral-small-2:24b`, `qwen3.6:27b-coding`, `qwen3.8:27b`, `muse-glimmer:30b`, `gemma4:26b`, `north-mini-code-1.0:q4_K_M`, `gemma4:31b`, `ornith:35b`, `qwen3-coder:30b`, `qwen3.6:35b-coding`, `glm-4.7-flash:q4_K_M`.
+- Large-memory: `qwen3-coder-next:q4_K_M`, `gpt-oss:120b`, `devstral-2:123b`, `mistral-medium-3.5:128b`, `qwen3.5:122b`, `nemotron-3-super:120b`, `laguna-s-2.1:q4_K_M`, `qwen3-coder:480b`.
+- Conditional: `laguna-xs-2.1:q4_K_M` is offered only on Linux while its Ollama build remains unreliable on Metal; `qwen3.8-flash-next:125b-a6b-q4_K_M` is an experimental preview available only through interactive custom selection.
+
+Automatic presets never select experimental entries. The interactive custom picker can opt into them, while platform, memory, disk, and known Ollama-version requirements remain enforced. Older schema-v1 external catalogues continue to load.
 
 An independently distributed compatible catalogue can be selected with `--catalog /path/to/models.json`; the bundled catalogue remains the offline fallback. The provider boundary is isolated in [`src/ollama.ts`](src/ollama.ts), making another OpenAI-compatible local backend possible in the future without changing recommendation logic.
 
@@ -179,6 +277,6 @@ make test
 
 The test suite covers catalogue validation, hardware tiers, model-role compatibility, configuration merging, structured tool calls, safe uninstall, task-contract verification, shell-free validation, legal workflow transitions, repair budgets, and end-to-end OpenCode probe interpretation.
 
-Generated configuration follows the current [OpenCode provider documentation](https://opencode.ai/docs/providers), [agent documentation](https://opencode.ai/docs/agents), and [`default_agent` configuration](https://opencode.ai/docs/config). Catalogue choices prioritize models Ollama identifies as tool-capable and suitable for agentic work, including [Qwen 3 Coder](https://ollama.com/library/qwen3-coder), [Devstral Small 2](https://ollama.com/library/devstral-small-2), and [Qwen 3 Coder Next](https://ollama.com/library/qwen3-coder-next).
+Generated configuration follows the current [OpenCode provider documentation](https://opencode.ai/docs/providers), [model compatibility documentation](https://opencode.ai/v2/docs/models), [agent documentation](https://opencode.ai/docs/agents), and [`default_agent` configuration](https://opencode.ai/docs/config). Catalogue choices prioritize models Ollama identifies as tool-capable and suitable for agentic work; each exact downloadable tag is recorded in the catalogue rather than inferred from a family name.
 
 Licensed under the [MIT License](LICENSE).

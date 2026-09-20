@@ -15,11 +15,23 @@ const roleMap: Record<Role, ModelRole> = {
   verifier: "verification", researcher: "research", reviewer: "review"
 };
 const legacyCapability: Partial<Record<Role, ModelRole>> = { explorer: "research", planner: "orchestrator", verifier: "research" };
-export function compatibleModels(models: Model[], h: HardwareInfo, role: Role): Model[] {
+export interface CompatibilityOptions { includeExperimental?: boolean }
+function versionAtLeast(actual: string, minimum: string): boolean {
+  const a = actual.split(".").map(Number);
+  const b = minimum.split(".").map(Number);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0);
+  }
+  return true;
+}
+export function compatibleModels(models: Model[], h: HardwareInfo, role: Role, options: CompatibilityOptions = {}): Model[] {
   const memory = effectiveMemoryGB(h);
   const capability = models.some(m => m.roles.includes(roleMap[role]))
     ? roleMap[role] : legacyCapability[role] ?? roleMap[role];
   return models.filter(m => m.toolCalling && m.agenticCoding && m.roles.includes(capability) &&
+    (options.includeExperimental || m.supportStatus !== "experimental") &&
+    (!m.platforms || m.platforms.includes(h.platform)) &&
+    (!m.minimumOllamaVersion || !h.ollamaVersion || versionAtLeast(h.ollamaVersion, m.minimumOllamaVersion)) &&
     m.minimumMemoryGB <= memory && m.storageGB + 5 <= h.diskAvailableGB);
 }
 export function summarizeAssignments(assignments: Record<Role, Model>): Pick<Recommendation, "uniqueModels" | "storageGB"> {
@@ -49,7 +61,12 @@ export function recommend(models: Model[], h: HardwareInfo, preset: Preset = "ba
   const fitting = (role: Role) => compatibleModels(models, h, role)
     .filter(m => preset === "quality" ? m.minimumMemoryGB <= effectiveMemoryGB(h) : m.recommendedMemoryGB <= effectiveMemoryGB(h))
     .sort((a, b) => score(b, preset, role) - score(a, preset, role));
-  const coder = fitting("coder")[0] || compatibleModels(models, h, "coder").sort((a,b) => a.minimumMemoryGB-b.minimumMemoryGB)[0];
+  const minimalCandidates = compatibleModels(models, h, "coder").filter(model => allRoles.every(role =>
+    compatibleModels(models, h, role).some(candidate => candidate.id === model.id)));
+  const coder = preset === "minimal"
+    ? minimalCandidates.filter(m => m.recommendedMemoryGB <= effectiveMemoryGB(h)).sort((a, b) => score(b, preset, "coder") - score(a, preset, "coder"))[0]
+      || minimalCandidates.sort((a, b) => a.minimumMemoryGB - b.minimumMemoryGB)[0]
+    : fitting("coder")[0] || compatibleModels(models, h, "coder").sort((a,b) => a.minimumMemoryGB-b.minimumMemoryGB)[0];
   if (!coder) throw new Error("No catalogue model fits this machine's memory and disk space");
   if (preset === "minimal") for (const role of allRoles) assignments[role] = coder;
   else for (const role of allRoles) {

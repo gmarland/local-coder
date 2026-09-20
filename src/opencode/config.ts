@@ -7,10 +7,10 @@ import { roles, type CapabilityTier, type Recommendation, type Role, type SavedS
 import { writeManagedFile } from "../persistence/ownership.js";
 
 const contextLimit: Record<CapabilityTier, number> = {
-  LOW: 16384,
-  MEDIUM: 24576,
-  HIGH: 32768,
-  VERY_HIGH: 32768
+  LOW: 32768,
+  MEDIUM: 65536,
+  HIGH: 65536,
+  VERY_HIGH: 131072
 };
 
 export const configuredContext = (model: { contextWindow: number }, tier: CapabilityTier = "HIGH") =>
@@ -29,7 +29,10 @@ export function generateConfig(existing: Record<string, unknown>, recommendation
   const existingProviders = typeof existing.provider === "object" && existing.provider ? existing.provider as Record<string, unknown> : {};
   const previousOllama = typeof existingProviders.ollama === "object" && existingProviders.ollama ? existingProviders.ollama as Record<string, unknown> : {};
   const previousModels = typeof previousOllama.models === "object" && previousOllama.models ? previousOllama.models as Record<string, unknown> : {};
-  const models = Object.fromEntries(recommendation.uniqueModels.map(m => [m.ollamaModel, { name: `${m.name} (local)`, limit: { context: configuredContext(m), output: 8192 } }]));
+  const models = Object.fromEntries(recommendation.uniqueModels.map(m => [m.ollamaModel, {
+    name: `${m.name} (local)`, limit: { context: configuredContext(m), output: 8192 },
+    ...(m.reasoningField ? { compatibility: { reasoningField: m.reasoningField } } : {})
+  }]));
   const priorInstructions = Array.isArray(existing.instructions) ? existing.instructions.filter(v => typeof v === "string") : [];
   return { ...existing, $schema: "https://opencode.ai/config.json", share: existing.share ?? "disabled", default_agent: "orchestrator",
     instructions: [...new Set([...priorInstructions, "AGENTS.md"])],

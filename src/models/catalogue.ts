@@ -6,7 +6,7 @@ import { isModel, isRecord } from "./validation.js";
 export async function loadCatalogue(path = fileURLToPath(new URL("../../../catalog/models.json", import.meta.url))): Promise<Catalogue> {
   const value: unknown = JSON.parse(await readFile(path, "utf8"));
   if (!isRecord(value)) throw new Error("catalogue must be an object");
-  if (value.schemaVersion !== 1 || typeof value.updated !== "string" || !value.updated.trim() ||
+  if ((value.schemaVersion !== 1 && value.schemaVersion !== 2) || typeof value.updated !== "string" || !value.updated.trim() ||
       !Array.isArray(value.models) || value.models.length === 0) throw new Error("unsupported or empty model catalogue");
   const ids = new Set<string>();
   const tags = new Set<string>();
@@ -22,5 +22,5 @@ export async function loadCatalogue(path = fileURLToPath(new URL("../../../catal
     if (!item.toolCalling || !item.agenticCoding) throw new Error(`${item.id} is unsuitable for agentic use`);
     models.push(item);
   }
-  return { schemaVersion: 1, updated: value.updated, models };
+  return { schemaVersion: value.schemaVersion, updated: value.updated, models };
 }

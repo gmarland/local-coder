@@ -41,7 +41,7 @@ function probeFailure(reason: string | undefined): string {
 function showMachine(h: Awaited<ReturnType<typeof detectHardware>>, r: Recommendation) {
   p.note([h.appleSilicon || h.cpu, `${h.totalMemoryGB} GB ${h.appleSilicon ? "unified " : ""}memory (${h.availableMemoryGB ?? "?"} GB currently available)`,
     h.gpu ? `GPU: ${h.gpu}${h.gpuVramGB ? ` / ${h.gpuVramGB} GB VRAM` : ""}` : "GPU: not detected", `${h.architecture} · ${h.diskAvailableGB} GB disk free`,
-    `Tools: Ollama ${h.commands.ollama ? "✓" : "missing"} · OpenCode ${h.commands.opencode ? "✓" : "missing"} · Git ${h.commands.git ? "✓" : "missing"} · ripgrep ${h.commands.rg ? "✓" : "missing"}`, `Capability: ${r.tier}`].join("\n"), "Machine detected");
+    `Tools: Ollama ${h.commands.ollama ? h.ollamaVersion ? `✓ ${h.ollamaVersion}` : "✓" : "missing"} · OpenCode ${h.commands.opencode ? "✓" : "missing"} · Git ${h.commands.git ? "✓" : "missing"} · ripgrep ${h.commands.rg ? "✓" : "missing"}`, `Capability: ${r.tier}`].join("\n"), "Machine detected");
 }
 function manualModel(name: string): Model {
   const tag = name.includes(":") ? name : `${name}:latest`;
@@ -50,9 +50,9 @@ function manualModel(name: string): Model {
 async function customise(base: Recommendation, models: Model[], h: Awaited<ReturnType<typeof detectHardware>>): Promise<Recommendation> {
   const assignments = { ...base.assignments };
   for (const role of roles) {
-    const compatible = compatibleModels(models, h, role);
+    const compatible = compatibleModels(models, h, role, { includeExperimental: true });
     const selected = await p.select({ message: `Configure ${role.toUpperCase()}`, initialValue: assignments[role].id,
-      options: [...compatible.map(m => ({ value: m.id, label: `${m.name} (~${m.storageGB} GB)`, hint: m.id === assignments[role].id ? "recommended" : m.notes })), { value: "__manual", label: "Enter an Ollama model manually" }] });
+      options: [...compatible.map(m => ({ value: m.id, label: `${m.name} (~${m.storageGB} GB)${m.supportStatus === "experimental" ? " [experimental]" : ""}`, hint: m.id === assignments[role].id ? "recommended" : m.notes })), { value: "__manual", label: "Enter an Ollama model manually" }] });
     cancelled(selected);
     if (selected === "__manual") {
       const tag = await p.text({ message: `Ollama model tag for ${role}`, placeholder: "model:tag", validate: v => v.trim() ? undefined : "Enter a model tag" });

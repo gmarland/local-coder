@@ -64,7 +64,7 @@ commands through `src/opencode/validation-runner.ts`.
 | --- | --- |
 | `src/cli.ts` | CLI usage, argument parsing, scope resolution, and dispatch |
 | `src/types.ts` | Shared model, role, hardware, recommendation, and saved-state types |
-| `src/hardware.ts` | Platform, memory, GPU, disk, and command detection |
+| `src/hardware.ts` | Platform, memory, GPU, disk, command, and installed Ollama-version detection |
 | `src/ollama.ts` | Ollama API operations and model capability probes |
 | `src/commands/common.ts` | Shared command options and prompt helpers |
 | `src/commands/setup.ts` | Interactive and automated setup orchestration |
@@ -73,7 +73,7 @@ commands through `src/opencode/validation-runner.ts`.
 | `src/commands/inspect.ts` | `status` and `models` output |
 | `src/models/catalogue.ts` | Catalogue loading and top-level validation |
 | `src/models/validation.ts` | Runtime validation helpers for model data |
-| `src/models/recommend.ts` | Hardware tiers, compatibility, presets, and role assignments |
+| `src/models/recommend.ts` | Hardware tiers, platform/version/status compatibility, presets, and role assignments |
 | `src/opencode/agents.ts` | Generated specialist prompts, permissions, and general guidance |
 | `src/opencode/config.ts` | OpenCode config merging and planned managed writes |
 | `src/opencode/context-models.ts` | Stable tags and assignments for context-sized model variants |
@@ -86,7 +86,7 @@ commands through `src/opencode/validation-runner.ts`.
 | `src/persistence/storage.ts` | Atomic file writes |
 | `src/persistence/ownership.ts` | Managed-file snapshots, restoration, and conflict detection |
 | `src/persistence/registry.ts` | Cross-scope Ollama model ownership and sharing registry |
-| `catalog/models.json` | Versioned offline model catalogue |
+| `catalog/models.json` | Versioned offline model catalogue with resource and compatibility metadata |
 | `docs/orchestration-audit.md` | Executable versus prompt-enforced orchestration guarantees |
 
 ## Generated and persistent state

@@ -3,18 +3,23 @@ export type Role = (typeof roles)[number];
 export type ModelRole = "orchestrator" | "exploration" | "planning" | "coding" | "verification" | "research" | "review";
 export type Preset = "balanced" | "quality" | "fast" | "minimal";
 export type CapabilityTier = "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
+export type ModelSupportStatus = "recommended" | "experimental";
+export type ReasoningField = "reasoning" | "reasoning_content" | "reasoning_text";
 
 export interface Model {
   id: string; name: string; ollamaModel: string; roles: ModelRole[];
   minimumMemoryGB: number; recommendedMemoryGB: number; storageGB: number;
   contextWindow: number; toolCalling: boolean; agenticCoding: boolean;
   speed: number; quality: number; notes: string;
+  supportStatus?: ModelSupportStatus; platforms?: NodeJS.Platform[];
+  minimumOllamaVersion?: string; reasoningField?: ReasoningField;
 }
 export interface Catalogue { schemaVersion: number; updated: string; models: Model[] }
 export interface HardwareInfo {
   platform: NodeJS.Platform; osName: string; architecture: string; cpu: string;
   appleSilicon?: string; totalMemoryGB: number; availableMemoryGB?: number;
   gpu?: string; gpuVramGB?: number; diskAvailableGB: number;
+  ollamaVersion?: string;
   commands: { ollama: boolean; opencode: boolean; git: boolean; rg: boolean };
 }
 export interface Recommendation {

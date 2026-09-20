@@ -42,6 +42,8 @@ export async function detectHardware(cwd = process.cwd()): Promise<HardwareInfo>
   const fields = disk?.split("\n").at(-1)?.trim().split(/\s+/);
   if (fields && fields.length >= 4) diskAvailableGB = Math.round(Number(fields[3]) / 1024 / 1024 * 10) / 10;
   const [ollama, opencode, git, rg] = await Promise.all([exists("ollama"), exists("opencode"), exists("git"), exists("rg")]);
+  const ollamaOutput = ollama ? await output("ollama", ["--version"]) : undefined;
+  const ollamaVersion = ollamaOutput?.match(/\b(\d+\.\d+\.\d+)\b/)?.[1];
   return { platform, osName: `${os.type()} ${os.release()}`, architecture: os.arch(), cpu, appleSilicon,
-    totalMemoryGB, availableMemoryGB, gpu, gpuVramGB, diskAvailableGB, commands: { ollama, opencode, git, rg } };
+    totalMemoryGB, availableMemoryGB, gpu, gpuVramGB, diskAvailableGB, ollamaVersion, commands: { ollama, opencode, git, rg } };
 }
