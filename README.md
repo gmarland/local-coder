@@ -119,6 +119,9 @@ OpenCode edits the directory it is launched against. Setup prints an explicit `o
 
 ## Development
 
+See [`REPO_MAP.md`](REPO_MAP.md) for module responsibilities, runtime flows, and
+the tests related to each subsystem.
+
 ```sh
 make build
 make test
