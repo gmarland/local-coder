@@ -198,6 +198,8 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     assert.ok(args.at(-1)!.includes(JSON.stringify(target)));
     assert.match(args.at(-1)!, /verification-test-7391@example\.invalid/);
     assert.match(args.at(-1)!, /coder then verifier workflow/);
+    assert.match(args.at(-1)!, /setup-integration-probe/);
+    assert.match(args.at(-1)!, /fileEquals/);
     assert.equal(options.env.npm_config_cache, path.join(project, ".npm-cache"));
     assert.match(await readFile(path.join(project, ".opencode", "agents", "coder.md"), "utf8"), /edit: allow/);
     assert.equal(JSON.parse(await readFile(path.join(project, ".opencode", "opencode.json"), "utf8")).default_agent, "orchestrator");
@@ -212,6 +214,30 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     return { stdout: successfulWorkflowTrace };
   }, writable);
   assert.deepEqual(edited, { ok: true });
+});
+
+test("real OpenCode probe recovers a missing verifier in the same session", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  let calls = 0;
+  const result = await probeOpenCodeEditing(setup, async (_command, args) => {
+    calls++;
+    const project = args[args.indexOf("--dir") + 1];
+    const target = path.join(project, "README.md");
+    if (calls === 1) {
+      assert.ok(!args.includes("--continue"));
+      await writeFile(target, (await readFile(target, "utf8")).replaceAll("maintainers@example.com", "verification-test-7391@example.invalid"));
+      return { stdout: JSON.stringify({ part: { id: "coder-part", callID: "coder-call", type: "tool", tool: "task",
+        state: { status: "completed", input: { subagent_type: "coder" }, output: "STATUS: SUCCESS" } } }) };
+    }
+    assert.ok(args.includes("--continue"));
+    assert.match(args.at(-1)!, /stopped without independent verification/);
+    assert.match(args.at(-1)!, /Do not call coder again/);
+    assert.match(args.at(-1)!, /setup-integration-probe/);
+    return { stdout: JSON.stringify({ part: { id: "verifier-part", callID: "verifier-call", type: "tool", tool: "task",
+      state: { status: "completed", input: { subagent_type: "verifier" }, output: "STATUS: PASS" } } }) };
+  }, async () => ({ ok: true }));
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls, 2);
 });
 
 test("real OpenCode probe reports a timeout after editing", async () => {

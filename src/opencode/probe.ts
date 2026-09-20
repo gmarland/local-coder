@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { Recommendation } from "../types.js";
 import { planInstallation } from "./config.js";
 import { checkOpenCodeStateAccess, type StateAccess } from "./state.js";
+import { serializeTaskContract, type TaskContract } from "./task-contract.js";
 import { analyzeOpenCodeTrace } from "./workflow.js";
 
 type RunOpenCode = (command: string, args: string[], options: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv }) => Promise<{ stdout: string; stderr?: string }>;
@@ -111,23 +112,59 @@ This footer must remain unchanged.
       await execFileAsync("git", ["init", "-q"], { cwd: project, timeout: 5000 });
       await execFileAsync("git", ["add", "README.md"], { cwd: project, timeout: 5000 });
     } catch { /* Non-git environments still receive an exact filesystem check. */ }
-    const prompt = `In the existing ${JSON.stringify(target)}, replace only the two occurrences of maintainers@example.com with the exact value ${protectedLiteral}. Preserve every other byte of the file. This is a repository edit: follow the required coder then verifier workflow. The exact email is a protected user literal, not example data. Do not edit the file yourself or reconstruct the temporary directory name. Report success only after independent verification of the repository state.`;
+    const contract: TaskContract = {
+      version: 2,
+      id: "setup-integration-probe",
+      request: `Replace only the two occurrences of maintainers@example.com in README.md with ${protectedLiteral} and preserve every other byte.`,
+      targetFiles: ["README.md"],
+      allowedPaths: ["README.md"],
+      protectedValues: [{ value: protectedLiteral, rule: "present", paths: ["README.md"] }],
+      expectedOutcomes: [{ kind: "fileEquals", path: "README.md", value: expectedContent }],
+      forbiddenOutcomes: [{ kind: "fileContains", path: "README.md", value: "maintainers@example.com" }],
+      preserveUnrelatedContent: true,
+      requiresTests: false,
+      noTestReason: "Exact documentation-only replacement is checked by file equality.",
+      validationCommands: [],
+      maxRepairAttempts: 2
+    };
+    const contractText = serializeTaskContract(contract);
+    const prompt = `In the existing ${JSON.stringify(target)}, replace only the two occurrences of maintainers@example.com with the exact value ${protectedLiteral}. Preserve every other byte of the file. This is a repository edit: follow the required coder then verifier workflow. Use this exact VERSION 2 TASK CONTRACT unchanged in both task calls: ${contractText}\nThe exact email is a protected user literal, not example data. Do not edit the file yourself or reconstruct the temporary directory name. The coder's report is never independent verification: after coder completes, you must call verifier as a new task even if coder claims it already verified the change. Report success only after verifier returns STATUS: PASS.`;
+    const runOptions = { timeout: 600000, maxBuffer: 8 * 1024 * 1024,
+      env: { ...process.env, OPENCODE_DISABLE_MODELS_FETCH: "1", npm_config_cache: path.join(project, ".npm-cache") } };
     let output = "";
     let commandError: unknown;
     try {
       // Do not use --pure here. It disables the npm provider module required by
       // the generated Ollama configuration, while a normal OpenCode launch loads it.
       const result = await run("opencode", ["run", "--print-logs", "--dir", project, "--agent", "orchestrator", "--format", "json", prompt],
-        { timeout: 600000, maxBuffer: 8 * 1024 * 1024,
-          env: { ...process.env, OPENCODE_DISABLE_MODELS_FETCH: "1", npm_config_cache: path.join(project, ".npm-cache") } });
+        runOptions);
       output = `${result.stdout}\n${result.stderr || ""}`;
     } catch (error) {
       commandError = error;
       const command = error as OpenCodeCommandError;
       output = `${command.stdout || ""}\n${command.stderr || ""}`;
     }
-    const actual = await readFile(target, "utf8").catch(() => undefined);
-    const trace = analyzeOpenCodeTrace(output);
+    let actual = await readFile(target, "utf8").catch(() => undefined);
+    let trace = analyzeOpenCodeTrace(output);
+    // Small local models occasionally stop after a successful coder task and
+    // mistake its self-report for independent verification. Continue the same
+    // session once with a narrow correction instead of repeating the edit.
+    const recoverableVerifierOmission = !commandError && actual === expectedContent && trace.roles.includes("coder") &&
+      !trace.roles.includes("verifier") && !toolError(output) && !externalDirectoryError(output) && !invalidTaskSessionError(output);
+    if (recoverableVerifierOmission) {
+      const recoveryPrompt = `The coder changed ${JSON.stringify(target)}, but you stopped without independent verification. Do not call coder again and do not trust its self-report. Continue the required workflow now: call task once with subagent_type verifier as a NEW task, omit task_id, and pass the original request plus this exact unchanged VERSION 2 TASK CONTRACT: ${contractText}\nRequire direct repository evidence for every contract outcome. Do not report success unless verifier returns STATUS: PASS.`;
+      try {
+        const result = await run("opencode", ["run", "--continue", "--print-logs", "--dir", project, "--agent", "orchestrator", "--format", "json", recoveryPrompt],
+          runOptions);
+        output += `\n${result.stdout}\n${result.stderr || ""}`;
+      } catch (error) {
+        commandError = error;
+        const command = error as OpenCodeCommandError;
+        output += `\n${command.stdout || ""}\n${command.stderr || ""}`;
+      }
+      actual = await readFile(target, "utf8").catch(() => undefined);
+      trace = analyzeOpenCodeTrace(output);
+    }
     if (actual === expectedContent && !commandError && trace.ok) return { ok: true };
     // The file contents alone do not prove OpenCode completed successfully.
     const failedCommand = commandFailure(commandError, output);
