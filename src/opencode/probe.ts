@@ -42,6 +42,14 @@ function toolError(output: string): string | undefined {
   return undefined;
 }
 
+function invalidTaskSessionError(output: string): string | undefined {
+  const message = toolError(output) || output;
+  const match = message.match(/Expected a string starting with ["']ses["'], got ["']([^"']+)["']/);
+  return match
+    ? `OpenCode received invalid task_id ${JSON.stringify(match[1])}; specialist calls must omit task_id and start new sessions`
+    : undefined;
+}
+
 function externalDirectoryError(output: string): string | undefined {
   for (const line of output.split("\n")) {
     const match = line.match(/evaluated permission=external_directory pattern=(\S+) .*action\.action=ask/);
@@ -81,13 +89,16 @@ export async function probeOpenCodeEditing(recommendation: Recommendation, run: 
       await writeFile(file.path, file.content);
     }
     const target = path.join(project, "README.md");
+    // Keep the repeated literal on separate lines: simple verifier grep tools
+    // report matching lines, which must not be mistaken for occurrence counts.
     const originalContent = `# Verification fixture
 
 This introduction must remain unchanged.
 
 ## Contact
 
-For inquiries, contact [maintainers@example.com](mailto:maintainers@example.com).
+Primary: maintainers@example.com
+Secondary: maintainers@example.com
 
 This footer must remain unchanged.
 `;
@@ -121,8 +132,8 @@ This footer must remain unchanged.
     // The file contents alone do not prove OpenCode completed successfully.
     const failedCommand = commandFailure(commandError, output);
     const reason = (failedCommand && actual === expectedContent
-      ? `${failedCommand}; README.md was edited correctly, but OpenCode did not complete successfully`
-      : failedCommand) || externalDirectoryError(output) || toolError(output) ||
+      ? `${failedCommand}; README.md was edited correctly, but OpenCode did not complete successfully${trace.ok ? "" : `; ${trace.reason}`}`
+      : failedCommand) || externalDirectoryError(output) || invalidTaskSessionError(output) || toolError(output) ||
       (actual === undefined ? "OpenCode removed the probe README" : actual !== expectedContent ? "OpenCode did not make the exact minimal README correction" : trace.reason);
     return { ok: false, reason };
   } finally {

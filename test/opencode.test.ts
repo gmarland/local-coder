@@ -52,6 +52,19 @@ test("context variants keep role assignments consistent and advertise their actu
   assert.equal(models[contextModelTag(source)].limit.context, 32768);
 });
 
+test("context variants reduce memory pressure on low-tier hardware", async () => {
+  const lowMemoryHardware: HardwareInfo = { ...hardware, cpu: "M1 Pro", totalMemoryGB: 16, availableMemoryGB: 6 };
+  const setup = recommend((await loadCatalogue()).models, lowMemoryHardware);
+  const configured = withContextModels(setup);
+  const source = setup.assignments.coder;
+  assert.equal(setup.tier, "LOW");
+  assert.equal(configured.assignments.coder.ollamaModel, contextModelTag(source, "LOW"));
+  assert.equal(configured.assignments.coder.contextWindow, 16384);
+  const config = generateConfig({}, configured);
+  const models = (config.provider as { ollama: { models: Record<string, { limit: { context: number } }> } }).ollama.models;
+  assert.equal(models[contextModelTag(source, "LOW")].limit.context, 16384);
+});
+
 test("generated project guidance makes verification the completion gate", () => {
   assert.match(generalInstructions, /exact user values in one versioned JSON task contract/);
   assert.match(generalInstructions, /Agent claims are not evidence/);
@@ -70,6 +83,7 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /researcher: allow/);
   assert.match(orchestrator, /reviewer: allow/);
   assert.match(orchestrator, /mode: primary/);
+  assert.match(orchestrator, /temperature: 0/);
   assert.match(orchestrator, /edit: deny/);
   assert.match(orchestrator, /bash: deny/);
   assert.match(orchestrator, /CALL the agent with the task tool yourself/);
@@ -87,7 +101,9 @@ test("orchestrator delegates repository changes and cannot edit or run commands"
   assert.match(orchestrator, /reviewer one final time/);
   assert.match(orchestrator, /Never report success after unresolved verifier failure or solely from coder's words/);
   assert.match(orchestrator, /Pass exactly three arguments: subagent_type, description, and prompt/);
-  assert.match(orchestrator, /Never include task_id or any other argument/);
+  assert.match(orchestrator, /OMIT task_id entirely on every call/);
+  assert.match(orchestrator, /Never invent a numeric session ID such as "1"/);
+  assert.match(orchestrator, /verifier as a NEW task.*omit task_id/);
   assert.match(orchestrator, /create a compact VERSION 2 TASK CONTRACT/);
   assert.match(orchestrator, /protectedValues.*present or unchanged/);
   assert.match(orchestrator, /exact JSON unchanged in every coder and verifier call/);
@@ -106,6 +122,8 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(coder, /mode: subagent/);
   assert.match(coder, /edit: allow/);
   assert.match(coder, /bash:\n    "\*": ask/);
+  assert.match(coder, /"grep \*": allow/);
+  assert.match(coder, /"wc \*": allow/);
   assert.match(coder, /"git push\*": deny/);
   assert.match(coder, /Implement the delegated request directly in the repository/);
   assert.match(coder, /Never return code for the user to paste/);
@@ -142,6 +160,8 @@ test("specialists have the intended edit, shell, and web permissions", async () 
   assert.match(verifier, /read:\n    "\*": allow/);
   assert.match(verifier, /glob: allow\n  grep: allow\n  list: allow/);
   assert.match(verifier, /bash:\n    "\*": ask/);
+  assert.match(verifier, /"grep \*": allow/);
+  assert.match(verifier, /"wc \*": allow/);
   assert.match(verifier, /edit: deny/);
   assert.match(verifier, /task: deny/);
   assert.match(verifier, /STATUS: PASS or FAIL/);
@@ -172,7 +192,9 @@ test("real OpenCode probe requires a filesystem edit, even when the command succ
     assert.equal(options.env.OPENCODE_DISABLE_MODELS_FETCH, "1");
     const project = args[args.indexOf("--dir") + 1];
     const target = path.join(project, "README.md");
-    assert.match(await readFile(target, "utf8"), /maintainers@example\.com/);
+    const fixture = await readFile(target, "utf8");
+    assert.equal(fixture.match(/maintainers@example\.com/g)?.length, 2);
+    assert.equal(fixture.split("\n").filter(line => line.includes("maintainers@example.com")).length, 2);
     assert.ok(args.at(-1)!.includes(JSON.stringify(target)));
     assert.match(args.at(-1)!, /verification-test-7391@example\.invalid/);
     assert.match(args.at(-1)!, /coder then verifier workflow/);
@@ -219,6 +241,17 @@ test("real OpenCode probe identifies an outside-project permission request", asy
   assert.match(failed.reason!, /requested access outside the temporary project/);
   assert.match(failed.reason!, /opendcode-probe/);
   assert.doesNotMatch(failed.reason!, /user rejected permission/);
+});
+
+test("real OpenCode probe explains malformed task session IDs", async () => {
+  const setup = recommend((await loadCatalogue()).models, hardware);
+  const failed = await probeOpenCodeEditing(setup, async () => ({ stdout: JSON.stringify({
+    part: { type: "tool", state: { status: "error", error: 'Expected a string starting with "ses", got "1"' } }
+  }) }), async () => ({ ok: true }));
+  assert.deepEqual(failed, {
+    ok: false,
+    reason: 'OpenCode received invalid task_id "1"; specialist calls must omit task_id and start new sessions'
+  });
 });
 
 test("real OpenCode probe reports the command status and OpenCode stderr", async () => {

@@ -85,7 +85,7 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   if (result.warnings.length) p.note(result.warnings.join("\n"), "Warnings");
   if (downloadGB + 5 > h.diskAvailableGB) throw new Error(`Insufficient disk space: keep at least 5 GB free after the ${downloadGB} GB model download. Choose smaller models or free disk space.`);
   const downloadPlan = options.noPull ? "Will not download models" : modelsToPull.length ? `Will download missing models:\n${modelsToPull.map(m => `  ${m.ollamaModel}  ~${m.storageGB || "?"} GB`).join("\n")}` : "All selected models are already installed";
-  p.note(`${downloadPlan}\n\nWill create local context variants (sharing the downloaded model weights):\n  ${result.uniqueModels.map(model => `${model.ollamaModel} → ${contextModelTag(model)} (${configuredContext(model)} tokens)`).join("\n  ")}\n\nWill merge and write:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
+  p.note(`${downloadPlan}\n\nWill create local context variants (sharing the downloaded model weights):\n  ${result.uniqueModels.map(model => `${model.ollamaModel} → ${contextModelTag(model, result.tier)} (${configuredContext(model, result.tier)} tokens)`).join("\n  ")}\n\nWill merge and write:\n  ${plan.files.map(file => file.path).join("\n  ")}\n\nNo prompts, source, or hardware data will leave this machine.`, "Ready to configure OpenCode");
   if (options.dryRun) { p.outro("Dry run complete; no changes were made."); return; }
   const managedFiles = plan.files.map(file => file.path);
   let backupExisting = options.backup;
@@ -140,11 +140,11 @@ export async function setup(options: Options, models: Model[], h: Awaited<Return
   if (running) {
     const installed = new Set(await installedModels());
     for (const model of result.uniqueModels) {
-      const alias = contextModelTag(model);
+      const alias = contextModelTag(model, result.tier);
       if (installed.has(alias) || !installed.has(model.ollamaModel)) continue;
-      p.log.step(`Creating ${alias} with ${configuredContext(model)} token context`);
+      p.log.step(`Creating ${alias} with ${configuredContext(model, result.tier)} token context`);
       try {
-        await createContextModel(model.ollamaModel, alias, configuredContext(model));
+        await createContextModel(model.ollamaModel, alias, configuredContext(model, result.tier));
         const digest = (await installedModelDigests()).get(alias) || "";
         createdContextModels.set(alias, digest);
         installed.add(alias);

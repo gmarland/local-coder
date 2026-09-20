@@ -12,7 +12,7 @@ Classify each repository change before delegating. Choose the least costly workf
 - DOMAIN: implementation needs current external documentation, unfamiliar APIs, standards, regulations, or domain facts: explorer and researcher → planner → coder → verifier → reviewer. Explorer and researcher may run independently; give both findings to planner.
 If a supposedly simple task proves more complex, move to the appropriate workflow. Do not run every agent for every request.
 
-For every task call, start a new specialist session. Pass exactly three arguments: subagent_type, description, and prompt. Never include task_id or any other argument. For follow-up work, make another new task call and include the earlier result in its prompt. Pass distilled findings, not raw transcripts.
+CRITICAL TASK CALL RULE: every specialist call starts a NEW session. Pass exactly three arguments: subagent_type, description, and prompt. The task schema may expose task_id, but you must OMIT task_id entirely on every call, including verifier, repair, and reviewer calls. Never invent a numeric session ID such as "1". For follow-up work, make another new task call and include the earlier result in its prompt. Pass distilled findings, not raw transcripts.
 
 After explorer and researcher return, give their concise findings to planner when planning is required. Give coder a compact handoff with these sections: OBJECTIVE, PLAN (if any), RELEVANT REPOSITORY CONTEXT, DOMAIN/RESEARCH CONTEXT (if any), CONSTRAINTS, EXPECTED VALIDATION. Planner advice is guidance; repository evidence controls. Require coder to explain justified deviations.
 
@@ -20,7 +20,7 @@ For every repository change, create a compact VERSION 2 TASK CONTRACT as one JSO
 
 The contract request preserves the user's exact values. Copy user-supplied emails, URLs, filenames, versions, identifiers, configuration values, and named symbols verbatim into the appropriate contract fields; never substitute or normalize them. Add concrete acceptance checks, preservation evidence, and safe repository validation commands. Behaviour changes require a focused test command unless the contract gives a specific noTestReason. Important contract information must be repeated, not left only in an earlier agent result.
 
-After coder returns, treat STATUS: SUCCESS and its explanation only as hints about where to inspect. AGENT CLAIMS ARE NOT EVIDENCE. Independently read or search affected files for the requested outcome, then always call task with subagent_type verifier. Give verifier the original request, complete TASK CONTRACT, paths actually reported as changed, coder claim, and concrete acceptance checks. The verifier runs deterministic checks where possible plus semantic verification and reports unambiguous STATUS: PASS or FAIL. You cannot run shell or git diff yourself.
+After coder returns, treat STATUS: SUCCESS and its explanation only as hints about where to inspect. AGENT CLAIMS ARE NOT EVIDENCE. Independently read or search affected files for the requested outcome, then always call task with subagent_type verifier as a NEW task using only subagent_type, description, and prompt; omit task_id. Give verifier the original request, complete TASK CONTRACT, paths actually reported as changed, coder claim, and concrete acceptance checks. The verifier runs deterministic checks where possible plus semantic verification and reports unambiguous STATUS: PASS or FAIL. You cannot run shell or git diff yourself.
 
 If your own read finds the outcome absent or verifier returns FAIL, make a new coder call headed VERIFICATION FAILED. Include the unchanged TASK CONTRACT, EXPECTED, OBSERVED repository evidence, and a narrow REPAIR instruction that corrects only the discrepancy and preserves surrounding content. Then call verifier again with the same contract. Allow at most TWO coder remediation attempts after initial implementation, counting missing-file corrections. Do not reset the count or broaden the edit. If verification still fails, stop and report FAILURE with expected and observed facts.
 
@@ -182,6 +182,8 @@ const permissions: Record<Role, string> = {
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "grep *": allow
+    "wc *": allow
     "rg *": allow
     "npm test*": allow
     "npm run test*": allow
@@ -207,6 +209,8 @@ const permissions: Record<Role, string> = {
     "git diff*": allow
     "git log*": allow
     "git show*": allow
+    "grep *": allow
+    "wc *": allow
     "rg *": allow
     "npm test*": allow
     "npm run test*": allow
@@ -248,7 +252,7 @@ const permissions: Record<Role, string> = {
 };
 
 export function generateAgent(role: Role, recommendation: Recommendation): string {
-  return `---\ndescription: ${prompts[role].description}\nmode: ${role === "orchestrator" ? "primary" : "subagent"}\nmodel: ollama/${recommendation.assignments[role].ollamaModel}\npermission:\n${permissions[role]}\n---\n\n${prompts[role].body}\n`;
+  return `---\ndescription: ${prompts[role].description}\nmode: ${role === "orchestrator" ? "primary" : "subagent"}\nmodel: ollama/${recommendation.assignments[role].ollamaModel}\ntemperature: 0\npermission:\n${permissions[role]}\n---\n\n${prompts[role].body}\n`;
 }
 
 export const generalInstructions = `# Local coding agent guidance

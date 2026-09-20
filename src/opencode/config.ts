@@ -3,10 +3,18 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { generateAgent, generalInstructions } from "./agents.js";
-import { roles, type Recommendation, type Role, type SavedState } from "../types.js";
+import { roles, type CapabilityTier, type Recommendation, type Role, type SavedState } from "../types.js";
 import { writeManagedFile } from "../persistence/ownership.js";
 
-export const configuredContext = (model: { contextWindow: number }) => Math.min(model.contextWindow, 32768);
+const contextLimit: Record<CapabilityTier, number> = {
+  LOW: 16384,
+  MEDIUM: 24576,
+  HIGH: 32768,
+  VERY_HIGH: 32768
+};
+
+export const configuredContext = (model: { contextWindow: number }, tier: CapabilityTier = "HIGH") =>
+  Math.min(model.contextWindow, contextLimit[tier]);
 
 export interface InstallResult { configPath: string; backupPath?: string; created: string[]; recoveredInvalidConfig?: boolean }
 export interface InstallOptions { recoverInvalidConfig?: boolean; backupExisting?: boolean }
